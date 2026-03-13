@@ -25,6 +25,10 @@ The following table maps each ingestion method to the scenarios where it excels 
 | **Structured Streaming** | Sub-minute latency ingestion from Kafka, Azure Event Hubs, or Kinesis; event-driven architectures where consumer lag must be minimised; stateful aggregations with watermarking | The source is cloud storage files rather than a message bus; your team lacks the operational capability to manage streaming job recovery |
 | **Delta Live Tables (DLT)** | Managed declarative pipelines where simplicity and built-in data quality are the priority; teams that want automated retry, lineage, and observability without writing custom orchestration logic | You need fine-grained control over trigger timing or compute configuration that DLT's managed runtime does not expose; budget is constrained (DLT incurs a DBU premium) |
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
+| **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
+| **SFTP (Native Connector)** | Receiving files from partner or vendor systems that deliver via SFTP; organisations that want a managed connector without custom Python scripting | ⚠️ **Public preview as of March 2026** — not recommended for critical production workloads without validating preview stability; not suitable where the source SFTP server has connectivity restrictions incompatible with Databricks-managed egress |
+| **Lakeflow Connect** | Managed ingestion from SaaS applications (Salesforce, Workday, ServiceNow, Google Analytics) and databases where building a custom connector is not justified; teams that want a fully native Databricks-managed pipeline with Unity Catalog governance and serverless compute | Sources not yet on the Lakeflow Connect connector catalogue; organisations with strict data residency requirements that need careful evaluation of data paths |
+| **Partner Connectors (Fivetran, Airbyte)** | SaaS sources not yet covered by Lakeflow Connect; organisations already invested in a specific connector platform; cases where the partner connector's catalogue breadth exceeds Lakeflow Connect's current offering | Sources supported natively by Lakeflow Connect, where consolidating on the Databricks-native toolchain is preferred |
 
 ### Trade-offs
 
@@ -34,12 +38,16 @@ Delta Live Tables sits above all of these methods in the abstraction stack. It m
 
 The Notebook Pattern has no place in production recurring ingestion. It has no state tracking, no deduplication guarantee, and no audit trail beyond the notebook run history. It is documented here to be explicitly excluded from production use cases, not to endorse it.
 
+Lakeflow Connect and third-party partner connectors both remove the burden of building and maintaining connectors for SaaS sources. Lakeflow Connect is the preferred choice for new implementations because it runs entirely within Databricks (serverless compute, Unity Catalog governance, Lakeflow Jobs orchestration) and does not require data to transit third-party infrastructure. Partner connectors (Fivetran, Airbyte) remain appropriate where the source is not yet on Lakeflow Connect's catalogue or where an existing investment in a connector platform exists.
+
 ### See Also
 
 - [Auto Loader documentation — Databricks](https://docs.databricks.com/en/ingestion/auto-loader/index.html)
 - [COPY INTO documentation — Databricks](https://docs.databricks.com/en/sql/language-manual/delta-copy-into.html)
 - [Delta Live Tables overview — Databricks](https://docs.databricks.com/en/delta-live-tables/index.html)
 - [Structured Streaming programming guide — Apache Spark](https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html)
+- [Lakeflow Connect overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/)
+- [SFTP ingestion — Azure Databricks (public preview)](https://learn.microsoft.com/en-us/azure/databricks/ingestion/sftp)
 - `ingestion_cookbook.md` — step-by-step implementation for each method
 
 ---
@@ -90,8 +98,11 @@ Schema evolution is the process by which a data pipeline handles changes to the 
 | **Auto Loader** | Yes — configurable via `cloudFiles.schemaEvolutionMode` | `addNewColumns` (default): new columns are added to the target Delta table automatically, existing records have `null` for the new column. `rescue`: unexpected columns are captured in a `_rescued_data` JSON column rather than causing failure. `failOnNewColumns`: pipeline fails if a new column is detected — useful for environments where uncontrolled schema change is not acceptable. `none`: schema changes are ignored and new columns are silently dropped. |
 | **COPY INTO** | No | COPY INTO uses the schema of the target Delta table. If the incoming files contain columns not present in the target table, those columns are silently dropped. If the incoming files are missing columns present in the target table, those columns are written as `null`. There is no mechanism to automatically evolve the target table schema. |
 | **Structured Streaming (manual)** | Limited — requires explicit handling | By default, Structured Streaming with a defined schema will drop unknown columns. Schema inference at stream start will read the schema from the first batch; subsequent schema changes will cause the stream to fail unless the checkpoint is deleted and the stream is restarted with the new schema. |
-| **Delta Live Tables** | Yes — DLT infers and evolves schema automatically for streaming tables | DLT will automatically add new columns to the managed Delta table when they appear in the source. Data quality expectations (`@dlt.expect`, `@dlt.expect_or_drop`) are evaluated after schema evolution, so expectations referencing columns that have not yet appeared will not fail the pipeline. |
-| **Notebook Pattern** | Manual only | The schema must be explicitly defined by the author. Any schema change requires the notebook to be updated manually before the next run. This is a significant maintenance burden and a source of production incidents. |
+| **Delta Live Tables** | Yes — DLT infers and evolves schema automatically for streaming tables | DLT will automatically add new columns to the managed Delta table when they appear in the source. Data quality expectations are evaluated after schema evolution, so expectations referencing columns that have not yet appeared will not fail the pipeline. |
+| **Notebook Pattern** | Manual only | The schema must be explicitly defined by the author. Any schema change requires the notebook to be updated manually before the next run. |
+| **JDBC** | No automatic evolution | JDBC reads use the schema inferred from the source table at read time. New source columns require a manual `ALTER TABLE ... ADD COLUMN` on the Delta target, or `mergeSchema` enabled on the write. |
+| **SFTP (Native Connector)** | Dependent on file format | Behaviour follows the underlying file format reader (CSV, JSON, Parquet). For JSON sources with `cloudFiles.schemaEvolutionMode` compatible options, new columns can be handled similarly to Auto Loader. CSV sources with inferred schema may fail on new columns without explicit configuration. |
+| **Lakeflow Connect** | Yes — automatic | All managed connectors automatically handle new and deleted columns unless you opt out. When a new column appears in the source, Databricks automatically ingests it on the next pipeline run. Rows prior to the schema change have `null` for the new column. |
 | **dbt Seeds** | No | Seeds are loaded from a fixed CSV file with an inferred or explicitly declared schema in `schema.yml`. Schema changes require the CSV and schema declaration to be updated and a full `dbt seed --full-refresh` to be run. |
 
 ### Recommendations
@@ -100,7 +111,7 @@ For production pipelines using Auto Loader, the `addNewColumns` mode is appropri
 
 Regardless of method, any column rename or column removal in the source is a breaking change that no method handles automatically without data loss. A column rename appears to the ingestion layer as the old column being dropped (written as `null`) and a new column being added. Downstream consumers that depend on the old column name will receive `null` values without any pipeline failure to alert them. Schema evolution strategies should therefore include a process for communicating source schema changes to downstream consumers, not just a technical mechanism for handling them in the pipeline.
 
-For Data Vault 2.0 pipelines, the hash key and hashdiff columns in the staging layer are derived from source columns. Any change to the columns included in a hash key is a business logic change, not merely a schema change, and must be handled by deprecating the existing hub or satellite and creating a new one with the corrected hash definition. This is not a limitation of the tooling — it is a fundamental property of the vault pattern.
+For Data Vault 2.0 pipelines, the hash key and hashdiff columns in the staging layer are derived from source columns. Any change to the columns included in a hash key is a business logic change, not merely a schema change, and must be handled by deprecating the existing hub or satellite and creating a new one with the corrected hash definition.
 
 ### See Also
 
@@ -124,11 +135,11 @@ The AutomateDV `stage` macro (in dbt) handles the mechanical work of building a 
 
 **Column ordering in hash keys.** Hash keys are computed from an ordered concatenation of business key columns. The order of columns in the hash key definition must be fixed and documented at the time the staging model is first built. If the column order changes — even temporarily — the resulting hash values will differ from previously computed values, causing existing records in hubs and satellites to appear as new records on the next load. Column ordering conventions must be agreed and recorded in the project's data dictionary before the first load runs in any environment above development.
 
-**Null substitution strategy.** Business key columns used in hash key derivation must not contain `null` values, because `null` in a concatenation produces unpredictable results depending on the concatenation method used. AutomateDV provides a `null_columns` parameter in the `stage` macro to substitute a placeholder value (typically an empty string or a domain-specific sentinel like `'UNKNOWN'`) for `null` business keys before hashing. The choice of placeholder must be agreed across all sources and must not conflict with legitimate business key values. For example, using `'0'` as a null substitute for a numeric customer ID is only safe if `0` is not a valid customer ID in the source system.
+**Null substitution strategy.** Business key columns used in hash key derivation must not contain `null` values, because `null` in a concatenation produces unpredictable results depending on the concatenation method used. AutomateDV provides a `null_columns` parameter in the `stage` macro to substitute a placeholder value (typically an empty string or a domain-specific sentinel like `'UNKNOWN'`) for `null` business keys before hashing. The choice of placeholder must be agreed across all sources and must not conflict with legitimate business key values.
 
 **Hashdiff column scope.** A hashdiff column is a hash of all descriptive (non-key) attribute columns in a satellite source. Its purpose is to detect row-level changes efficiently without comparing every column individually. The columns included in the hashdiff for each satellite must match exactly the columns that will be loaded into that satellite. Adding or removing a column from the hashdiff definition after the satellite has been populated will cause every existing record to be re-evaluated as changed on the next load, resulting in a large volume of new satellite records that represent no actual business change.
 
-**Ghost record injection.** AutomateDV's `stage` macro supports injecting a ghost record — a row with surrogate placeholder values for all hash key columns — that represents the "unknown" or "not applicable" member in the vault. Ghost records allow fact tables and link satellites to reference a hub member that accounts for late-arriving dimensions without producing referential integrity violations. Whether to inject ghost records must be decided at platform design time, as the placeholder hash values must be consistent across all hubs that the staging layer feeds.
+**Ghost record injection.** AutomateDV's `stage` macro supports injecting a ghost record — a row with surrogate placeholder values for all hash key columns — that represents the "unknown" or "not applicable" member in the vault. Ghost records allow fact tables and link satellites to reference a hub member that accounts for late-arriving dimensions without producing referential integrity violations.
 
 ### See Also
 
@@ -152,21 +163,100 @@ Seeds are not a general-purpose ingestion mechanism. They are appropriate for a 
 Seeds are appropriate when all of the following conditions are met:
 
 - The data is small. A practical upper limit is a few thousand rows. dbt seeds are loaded by reading the CSV file in the dbt process and generating a `CREATE OR REPLACE TABLE` statement — there is no bulk-load mechanism. Loading hundreds of thousands of rows via a seed is slow and ties up the dbt runner.
-- The data changes rarely — at most a few times per year. Each time the data changes, an engineer must update the CSV, commit the change to the repository, open a pull request, and run `dbt seed` in the target environment. This is the correct process for data that should be change-controlled, but it is too heavyweight for data that changes weekly.
-- The change history matters. Because seed CSV files are committed to the version control repository, every change is traceable with a commit hash, author, date, and commit message. For regulatory reference data — for example, ISO country codes, financial instrument classifications, or tax rate tables — this auditability is valuable.
-- The data is truly static reference data, not a slowly changing dimension. A slowly changing dimension (customer address history, product category hierarchy with effective dates) requires a purpose-built SCD pipeline, not a seed.
+- The data changes rarely — at most a few times per year. Each time the data changes, an engineer must update the CSV, commit the change to the repository, open a pull request, and run `dbt seed` in the target environment.
+- The change history matters. Because seed CSV files are committed to the version control repository, every change is traceable with a commit hash, author, date, and commit message.
+- The data is truly static reference data, not a slowly changing dimension. A slowly changing dimension requires a purpose-built SCD pipeline, not a seed.
 
 Seeds should be avoided when:
 
 - The data volume exceeds a few thousand rows. For larger reference datasets, use COPY INTO or Auto Loader to load from cloud storage instead.
-- The data is updated by a non-technical team (business analysts, operations staff) who do not have access to the dbt repository or are not familiar with the pull request workflow. In these cases, a Delta table loaded from a shared cloud storage location is more appropriate.
+- The data is updated by a non-technical team who do not have access to the dbt repository or are not familiar with the pull request workflow.
 - The data has a meaningful update frequency (weekly or more often). The overhead of the version control workflow does not justify itself for frequently changing data.
-- The seed is being used as a workaround for a missing dimension table in the warehouse. If the reference data properly belongs in a hub, satellite, or reference table in the vault, it should be loaded there through the appropriate vault loading pattern.
+- The seed is being used as a workaround for a missing dimension table in the warehouse.
 
-One significant advantage of seeds over other reference data patterns is that the seed CSV is testable with dbt's built-in test framework. Column-level uniqueness, not-null, accepted-values, and relationships tests can be declared in `schema.yml` alongside the seed definition and will run as part of `dbt test`, giving the platform the same data quality coverage for reference data as for modelled tables.
+One significant advantage of seeds over other reference data patterns is that the seed CSV is testable with dbt's built-in test framework. Column-level uniqueness, not-null, accepted-values, and relationships tests can be declared in `schema.yml` alongside the seed definition and will run as part of `dbt test`.
 
 ### See Also
 
 - [dbt seeds documentation](https://docs.getdbt.com/docs/build/seeds)
 - [dbt seed configuration in dbt_project.yml](https://docs.getdbt.com/reference/seed-configs)
 - `ingestion_cookbook.md` — dbt Seeds implementation example with sample CSV and compiled SQL
+
+---
+
+## Database Ingestion (JDBC)
+
+### Overview
+
+JDBC ingestion is the standard pattern for extracting data directly from relational database systems into Databricks. Unlike file-based ingestion, the source is a live database rather than files in cloud storage. Spark's JDBC data source reads data over a JDBC connection and materialises it as a DataFrame, which is then written to Delta Lake.
+
+JDBC ingestion is a batch-pull mechanism. It does not support streaming or low-latency use cases. It is the correct pattern when the source system is a relational database that does not expose a file export, CDC feed, or event stream interface.
+
+### Decision Criteria
+
+| Factor | Guidance |
+|--------|----------|
+| **Full vs. incremental extract** | Full extract: read the entire table on every run. Simple to implement but expensive for large tables. Incremental extract: filter on a watermark column (`updated_at`, `inserted_at`, or a sequence ID) to read only changed rows since the last run. Requires a reliable, indexed watermark column in the source. |
+| **Parallelism** | By default, a JDBC read is single-threaded — all rows are fetched through a single connection. For large tables, parallelism is configured via `numPartitions`, `partitionColumn`, `lowerBound`, and `upperBound`. Spark splits the read into N parallel queries, each fetching a non-overlapping range of the partition column. The partition column must be numeric or date-type and should be indexed on the source to avoid full table scans on every partition query. |
+| **Source load** | Parallel JDBC reads issue multiple concurrent queries against the source database. On a production OLTP system this can cause contention. Schedule JDBC ingestion during off-peak hours and limit `numPartitions` accordingly. Use a read replica where available. |
+| **Credential management** | JDBC connection strings include usernames and passwords. These must never be hardcoded in notebooks or job configurations. Store credentials in Databricks Secrets and reference them at runtime via `dbutils.secrets.get()`. |
+
+### Trade-offs
+
+The primary limitation of JDBC ingestion is scalability under parallel load. Increasing `numPartitions` improves Databricks-side throughput but places proportionally more load on the source database. There is no universally correct value — it must be tuned per source based on the database's available connections and query concurrency limits.
+
+JDBC does not provide a change data capture (CDC) mechanism. Incremental JDBC ingestion based on a watermark column will miss hard deletes — rows that are physically removed from the source table will not appear in the incremental extract and will remain in the Delta target indefinitely unless a separate reconciliation job identifies and removes them. If full delete propagation is required, consider a CDC tool (Debezium, Qlik Replicate) that reads the database transaction log rather than querying the table directly.
+
+### See Also
+
+- [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/connect/external-systems/jdbc)
+- [Spark JDBC data source — Apache Spark](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html)
+- `ingestion_cookbook.md` — JDBC implementation with partition tuning examples
+
+---
+
+## Managed Ingestion
+
+### Overview
+
+Managed ingestion covers patterns where a connector service — either Databricks-native or third-party — handles extraction from source systems and delivers data to Delta tables. The key distinction within this category is whether data transits Databricks infrastructure or a third-party service.
+
+- **Lakeflow Connect** — Databricks-native managed connectors for SaaS applications and databases. Runs on serverless compute within Databricks, governed by Unity Catalog, orchestrated by Lakeflow Jobs. Data does not leave Databricks infrastructure.
+- **Partner Connectors (Fivetran, Airbyte)** — third-party managed services that extract data from source systems and land it in Delta tables. Data transits the connector vendor's infrastructure before arriving in Databricks.
+
+For new implementations, Lakeflow Connect is the preferred choice where the source is on its connector catalogue, as it eliminates the data residency and governance complexity of third-party connectors.
+
+### Lakeflow Connect
+
+Lakeflow Connect provides managed connectors for ingesting data from SaaS applications and databases directly into Delta tables. As of March 2026, it is generally available for Salesforce, Workday, and SQL Server, with ServiceNow and Google Analytics available for additional sources. The connector catalogue continues to expand.
+
+Key characteristics:
+
+- **Fully native to Databricks.** Pipelines run on serverless compute, are governed by Unity Catalog, and are orchestrated by Lakeflow Jobs. No external infrastructure is required.
+- **Incremental by default.** Lakeflow Connect uses incremental reads to ingest only changed data, reducing load on source systems and improving pipeline efficiency.
+- **Automatic schema evolution.** New columns in the source are automatically added to the Delta target on the next pipeline run. Deleted columns are retained in Delta with `null` values going forward.
+- **CI/CD support.** Pipelines can be deployed via Databricks Asset Bundles, enabling source control, code review, and environment promotion workflows.
+- **Serverless pricing.** Cost is based on serverless DBU consumption during pipeline runs, not a per-row or per-record fee.
+
+**When Lakeflow Connect is appropriate:**
+- The source is a SaaS application or database on the connector catalogue
+- The organisation wants a fully managed, Databricks-native pipeline with no third-party data transit
+- Unity Catalog governance (lineage, access control, audit) must apply to the ingestion layer
+
+**When Lakeflow Connect is not appropriate:**
+- The required source is not yet on the connector catalogue — check the current list in the Databricks documentation
+- The organisation has an existing investment in Fivetran or Airbyte with a catalogue that exceeds Lakeflow Connect's current offering
+
+### Partner Connectors (Fivetran, Airbyte, and Partner Connect)
+
+Partner connectors remain appropriate where the source is not supported by Lakeflow Connect or where an existing connector platform investment is in place. Configuration on the Databricks side is minimal: the connector service principal needs `CREATE TABLE` and `MODIFY` on the target schema. The connector lands data into Delta tables (typically in a bronze schema), after which normal transformation pipelines take over.
+
+**Key governance consideration:** Partner connectors extract data using credentials that have access to the source system, and that data transits the connector vendor's infrastructure before arriving in Databricks. This must be assessed against data residency requirements, privacy regulations (GDPR, HIPAA), and contractual data handling obligations before deploying a partner connector for sensitive data. Obtain a Data Processing Agreement (DPA) from the connector vendor for any personally identifiable or regulated data.
+
+### See Also
+
+- [Lakeflow Connect overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/)
+- [Databricks Partner Connect — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/partner-connect/)
+- [Fivetran Databricks connector documentation](https://fivetran.com/docs/destinations/databricks)
+- [Airbyte Databricks destination documentation](https://docs.airbyte.com/integrations/destinations/databricks)
+- `ingestion_cookbook.md` — Lakeflow Connect and Partner Connector implementation examples
