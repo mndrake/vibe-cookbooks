@@ -12,9 +12,11 @@ Each method section follows a consistent structure: the problem being solved, th
 
 ### Installing Your Development Environment
 
-> **On Databricks:** dbt does not run on Databricks clusters. It runs on your local machine and submits SQL to Databricks via the SQL Warehouse HTTP path. PySpark and Delta Lake are pre-installed on every Databricks cluster — no local installation of these is needed to run dbt models.
+> **dbt execution environments:**
+> - **Local development:** `dbt-databricks` runs on your local machine, submitting SQL to a Databricks SQL Warehouse via `http_path` in `~/.dbt/profiles.yml`.
+> - **Databricks Asset Bundle jobs (production):** When deployed via `databricks bundle deploy`, dbt runs on a Databricks single-node job cluster (`num_workers: 0`) or serverless environment. The bundle installs `dbt-databricks` as a pypi library; workspace credentials (`DBT_HOST`, `DBT_ACCESS_TOKEN`) are injected by Databricks automatically. SQL is submitted to a SQL Warehouse via the bundle's `dbt_profiles/profiles.yml`.
 >
-> **Local development:** All tools below are installed on your local machine.
+> In both cases, dbt submits SQL to a **SQL Warehouse** — it does not use Spark directly. PySpark is pre-installed on Databricks clusters but not needed for dbt workloads. For production Asset Bundle deployments, only the Databricks CLI is required locally.
 
 | Tool | Version | Environment | Notes |
 |------|---------|-------------|-------|

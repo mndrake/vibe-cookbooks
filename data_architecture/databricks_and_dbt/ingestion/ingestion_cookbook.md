@@ -18,9 +18,11 @@ The architectural rationale for choosing between these methods — latency requi
 
 > **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark and Delta Lake are pre-installed with every Databricks Runtime — no `pip install` is needed to run the PySpark and SQL examples in this cookbook on a cluster.
 >
-> **dbt runs locally, not on Databricks clusters.** `dbt-databricks` is a CLI tool that runs on your local machine and submits SQL to Databricks via the SQL Warehouse HTTP path. Install it locally, not on a cluster.
+> **dbt execution environments:**
+> - **Local development:** `dbt-databricks` runs on your local machine, submitting SQL to a Databricks SQL Warehouse via `http_path` in `~/.dbt/profiles.yml`.
+> - **Databricks Asset Bundle jobs (production):** When deployed via `databricks bundle deploy`, dbt runs on a Databricks single-node job cluster (`num_workers: 0`) or serverless environment. The bundle installs `dbt-databricks` as a pypi library; workspace credentials are injected automatically. SQL is submitted to a SQL Warehouse.
 >
-> **Local development:** All tools below are installed on your local machine.
+> For production Asset Bundle deployments, only the Databricks CLI is required locally — `dbt-databricks` is installed on the job cluster by the bundle.
 
 | Tool | Version | Environment | Notes |
 |------|---------|-------------|-------|

@@ -14,9 +14,13 @@ For the architectural decisions behind these patterns — when to use native Uni
 
 ### Installing Your Development Environment
 
-> **On Databricks (interactive notebooks or jobs):** Unity Catalog SQL runs directly in notebooks or on a SQL Warehouse — no local tooling needed for the native SQL examples. dbt does not run on Databricks clusters; it runs on your local machine and submits SQL via the SQL Warehouse HTTP path.
+> **On Databricks (interactive notebooks or jobs):** Unity Catalog SQL runs directly in notebooks or on a SQL Warehouse — no local tooling needed for the native SQL examples.
 >
-> **Local development:** All tools below are installed on your local machine.
+> **dbt execution environments:**
+> - **Local development:** `dbt-databricks` runs on your local machine, submitting SQL to a Databricks SQL Warehouse via `http_path` in `~/.dbt/profiles.yml`.
+> - **Databricks Asset Bundle jobs (production):** When deployed via `databricks bundle deploy`, dbt runs on a Databricks single-node job cluster (`num_workers: 0`) or serverless environment. The bundle installs `dbt-databricks` as a pypi library; workspace credentials are injected automatically. SQL is submitted to a SQL Warehouse.
+>
+> For production Asset Bundle deployments, only the Databricks CLI is required locally — `dbt-databricks` is installed on the job cluster by the bundle.
 
 | Tool | Version | Environment | Notes |
 |------|---------|-------------|-------|
