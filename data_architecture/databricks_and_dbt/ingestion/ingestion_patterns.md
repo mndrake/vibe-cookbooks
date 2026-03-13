@@ -8,6 +8,60 @@ This document is intended for data architects, senior data engineers, and techni
 
 ---
 
+## Landing Zone Architecture
+
+### What Is a Landing Zone?
+
+A landing zone is a cloud storage location (ADLS Gen2, S3, or GCS) where raw data files are deposited by upstream systems before Databricks reads them. Databricks does not control how data arrives in the landing zone — that is the responsibility of the upstream system. Common upstream delivery mechanisms include:
+
+- **File export pipelines** (Azure Data Factory, AWS Glue, Informatica, Talend) that extract from OLTP or ERP systems and write files to cloud storage
+- **SaaS application exports** (Salesforce data export, Workday report delivery) scheduled to drop CSV or Parquet files to a storage account
+- **SFTP push patterns** where partner or vendor systems push files to a Databricks-managed SFTP endpoint, which then lands them in cloud storage
+- **Direct writes from IoT or application services** that write events or snapshots to cloud storage buckets
+
+> **Scope note:** Configuration of upstream delivery tools (Azure Data Factory, SFTP servers, SaaS export schedules) is outside the scope of this cookbook. This document covers what Databricks does with data once it is in the landing zone — or when a landing zone is not needed at all.
+
+### When You Need a Landing Zone
+
+The following ingestion methods require data to be present in cloud storage before Databricks can read it:
+
+| Method | Landing Zone Required | Reason |
+|--------|-----------------------|--------|
+| **Auto Loader** | Yes | Reads file paths from ADLS/S3/GCS; upstream must deposit files there first |
+| **COPY INTO** | Yes | Reads from a cloud storage path; files must already be present at that path |
+| **SFTP Native Connector** | Yes | Databricks SFTP connector lands received files into a configured cloud storage path, then processes them |
+
+For these methods, the landing zone is the contractual boundary between the upstream delivery system and the Databricks pipeline. The upstream system writes; Databricks reads. Neither side needs to know about the other's schedule.
+
+### When You Can Bypass a Landing Zone
+
+The following ingestion methods read directly from the source system without requiring a cloud storage staging step:
+
+| Method | Landing Zone Required | Source |
+|--------|-----------------------|--------|
+| **JDBC** | No | Reads directly from a relational database (SQL Server, PostgreSQL, MySQL, Oracle) |
+| **Lakeflow Connect** | No | Managed connector reads from SaaS APIs (Salesforce, Workday, etc.) and writes directly to Delta tables |
+| **Partner Connectors (Fivetran, Airbyte)** | No | Connector service reads from source and writes directly to Delta; no file staging step |
+| **Structured Streaming (Kafka/Event Hubs/Kinesis)** | No | Reads from a message broker offset — no file system staging involved |
+
+Direct ingestion simplifies the architecture (fewer storage accounts, fewer permissions, no file lifecycle management) but removes the raw file audit trail that a landing zone provides.
+
+### Design Considerations
+
+- **Landing zone enables replay:** Raw files retained in the landing zone can be reprocessed if a Databricks pipeline run fails, if data is corrupted downstream, or if a new processing requirement emerges. Once data has been ingested via JDBC or a managed connector and the source system has rolled over its data, reprocessing may not be possible.
+- **Landing zone decouples delivery from processing:** The upstream system deposits files on its own schedule; Auto Loader or COPY INTO processes them on the Databricks schedule. The two are fully decoupled. With JDBC or streaming, the Databricks pipeline must connect to the source system at extraction time — a source outage directly blocks the pipeline.
+- **Data Vault architectures favour landing zone + Auto Loader:** The Raw Vault loading principle (never modify source data, load exactly as received) is most naturally satisfied by landing raw files and loading them unchanged via Auto Loader into a staging layer before hashing. JDBC or connector-based ingestion can also feed a Raw Vault, but the raw file is not retained.
+- **Landing zone adds storage cost and file lifecycle management:** Raw files in the landing zone accumulate over time. Define a retention policy (e.g., retain for 30 days, then archive to cool tier or delete) and enforce it with storage lifecycle rules — not Databricks logic.
+- **Direct ingestion via connectors is the right choice for SaaS sources:** SaaS applications (Salesforce, Workday) do not expose a reliable file export that would populate a landing zone automatically. Lakeflow Connect or a partner connector is the correct pattern — attempting to land SaaS data via file export introduces fragility and latency.
+
+### See Also
+
+- [Azure Data Lake Storage Gen2 — Microsoft Documentation](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction)
+- [Auto Loader — reading from cloud storage](https://docs.databricks.com/en/ingestion/auto-loader/index.html)
+- [Lakeflow Connect — direct SaaS ingestion](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/)
+
+---
+
 ## Ingestion Method Selection
 
 ### Overview
