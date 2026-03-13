@@ -24,12 +24,16 @@ Hub and Link loading uses `DeltaTable.merge()` with `whenNotMatchedInsertAll()` 
 
 ### Installing Your Development Environment
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.10+ | Required for Databricks Asset Bundles CLI |
-| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Bundle deployment and workspace interaction |
-| `delta-spark` | Bundled with Databricks Runtime | `DeltaTable` API — no separate install needed |
-| Delta Live Tables runtime | Current channel | Provided by Databricks — no installation needed |
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+>
+> **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
+
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.10+ | Local dev | Required for the Databricks CLI |
+| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Bundle deployment and workspace interaction |
+| `delta-spark` | Bundled with Databricks Runtime | Databricks (bundled) | Pre-installed; no separate install needed on a cluster |
+| Delta Live Tables runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
 
 ### Getting a New Starter Project
 

@@ -12,12 +12,16 @@ All models in this cookbook are append-only and idempotent. They read from stagi
 
 ### Installing Your Development Environment
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for dbt-databricks |
-| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.7.x | Core transformation framework |
-| [automate_dv](https://automate-dv.readthedocs.io/en/latest/) | 0.10.2 | Generates all vault-pattern SQL |
-| Databricks CLI | Latest | Workspace interaction |
+> **On Databricks:** dbt does not run on Databricks clusters. It runs on your local machine and submits SQL to Databricks via the SQL Warehouse HTTP path. PySpark and Delta Lake are pre-installed on every Databricks cluster — no local installation of these is needed to run dbt models.
+>
+> **Local development:** All tools below are installed on your local machine.
+
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for dbt-databricks |
+| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.7.x | Local dev | Core transformation framework — runs locally, connects to Databricks |
+| [automate_dv](https://automate-dv.readthedocs.io/en/latest/) | 0.10.2 | Local dev | Generates all vault-pattern SQL; installed via `dbt deps` |
+| Databricks CLI | Latest | Local dev | Workspace interaction and secrets management |
 
 Configure your dbt profile in `~/.dbt/profiles.yml`:
 

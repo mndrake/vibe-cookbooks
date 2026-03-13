@@ -18,15 +18,17 @@ For the architectural decisions behind these patterns — when to use native Uni
 
 ### Installing Your Development Environment
 
-Install the following tools before proceeding:
+> **On Databricks (interactive notebooks or jobs):** PySpark and Unity Catalog SQL are available in every Databricks Runtime. SQL examples in this cookbook can be run directly in a notebook or SQL Warehouse — no local installation needed.
+>
+> **Local development:** The tools below are installed on your local machine for CLI operations and infrastructure management.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for PySpark examples |
-| Databricks CLI | 0.200+ | Required for secrets management and service principal examples |
-| Terraform (optional) | 1.5+ | Required for infrastructure-as-code grant management examples |
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for the Databricks CLI |
+| Databricks CLI | 0.200+ | Local dev | Required for secrets management and service principal examples |
+| Terraform (optional) | 1.5+ | Local dev | Required for infrastructure-as-code grant management examples |
 
-Configure your Databricks connection:
+Configure your Databricks connection (local machine):
 
 ```bash
 # Authenticate the Databricks CLI

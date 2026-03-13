@@ -15,14 +15,18 @@ The architectural rationale for choosing between methods is covered in `ingestio
 
 ## Development Environment Pre-Requisites
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for PySpark |
-| Apache Spark via PySpark | 3.4+ | Installed automatically with Databricks Runtime; install locally with `pip install pyspark` for unit testing |
-| Databricks CLI | Latest | Used for secrets management, workspace interaction, and deploying Databricks Asset Bundles |
-| delta-spark | 2.4+ | Required for local `DeltaTable` merge operations: `pip install delta-spark` |
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), Delta Live Tables, and `dbutils` are pre-installed with every Databricks Runtime. No `pip install` commands are needed to run the code examples in this cookbook on a Databricks cluster.
+>
+> **Local development:** The tools below are required on your local machine for Databricks CLI operations, Asset Bundle deployment, and running unit tests outside Databricks.
 
-Configure your Databricks CLI connection:
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for the Databricks CLI and local PySpark unit tests |
+| Apache Spark via PySpark | 3.4+ | Local dev only | Bundled with Databricks Runtime — `pip install pyspark` only for local unit testing |
+| Databricks CLI | Latest | Local dev | Used for secrets management, workspace interaction, and deploying Databricks Asset Bundles |
+| delta-spark | Match DBR version | Local dev only | Bundled with Databricks Runtime — `pip install delta-spark` only for local unit testing; version must match your DBR's bundled Delta Lake version |
+
+Configure your Databricks CLI connection (local machine):
 
 ```bash
 # Authenticate using OAuth (recommended for interactive use)

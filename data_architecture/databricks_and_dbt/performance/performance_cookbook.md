@@ -14,16 +14,18 @@ For architectural decisions and pattern trade-offs, see the companion document: 
 
 ### Installing Your Development Environment
 
-Install the following tools before proceeding:
+> **On Databricks (interactive notebooks or jobs):** PySpark, Delta Lake, and Photon are pre-installed with every Databricks Runtime. No `pip install` is needed to run the PySpark and SQL examples on a cluster. dbt does not run on Databricks clusters; it runs on your local machine and submits SQL via the SQL Warehouse HTTP path.
+>
+> **Local development:** All tools below are installed on your local machine.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for PySpark examples |
-| dbt-databricks | Latest | Required for dbt model examples |
-| Databricks CLI | Latest | Used for workspace interaction and job configuration |
-| Databricks SDK for Python | Latest | Optional; used for cluster config examples |
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for dbt-databricks and the Databricks CLI |
+| dbt-databricks | Latest | Local dev | Runs locally; required for dbt model examples |
+| Databricks CLI | Latest | Local dev | Used for workspace interaction and job configuration |
+| Databricks SDK for Python | Latest | Local dev (optional) | Used for cluster config examples |
 
-Configure your Databricks connection:
+Configure your Databricks connection (local machine):
 
 ```bash
 # Authenticate the Databricks CLI

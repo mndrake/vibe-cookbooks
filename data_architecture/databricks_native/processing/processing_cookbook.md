@@ -20,16 +20,18 @@ Each method section follows a consistent structure: the problem being solved, th
 
 ### Installing Your Development Environment
 
-Install the following tools before proceeding:
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake, and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+>
+> **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for PySpark |
-| PySpark | Provided by Databricks Runtime | Do not install PySpark manually when running on a Databricks cluster; install locally for unit testing |
-| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | Latest (v0.200+) | Used for workspace interaction, secrets management, and deploying Asset Bundles |
-| [Databricks Asset Bundles (DAB)](https://docs.databricks.com/en/dev-tools/bundles/index.html) | Bundled with Databricks CLI v0.200+ | Used to define and deploy Jobs, DLT pipelines, and permissions as code |
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for the Databricks CLI and local PySpark unit tests |
+| PySpark | Provided by Databricks Runtime | Local dev only | Bundled with Databricks Runtime — `pip install pyspark` only for local unit testing |
+| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | Latest (v0.200+) | Local dev | Used for workspace interaction, secrets management, and deploying Asset Bundles |
+| [Databricks Asset Bundles (DAB)](https://docs.databricks.com/en/dev-tools/bundles/index.html) | Bundled with Databricks CLI v0.200+ | Local dev | Used to define and deploy Jobs, DLT pipelines, and permissions as code |
 
-Install Python dependencies:
+Install Python dependencies (local machine only — not needed on Databricks clusters):
 
 ```bash
 pip install databricks-cli

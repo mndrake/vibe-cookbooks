@@ -22,14 +22,18 @@ Hash key derivation replaces AutomateDV's `stage` macro with `MD5()`, `SHA2()`, 
 
 ### Installing Your Development Environment
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.10+ | Required for Databricks Asset Bundles CLI |
-| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Bundle deployment and workspace interaction |
-| [Databricks SDK for Python](https://docs.databricks.com/en/dev-tools/sdk-python.html) | Latest | Optional — for programmatic pipeline triggering |
-| Delta Live Tables runtime | Current channel | Provided by Databricks — no installation needed |
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake, and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+>
+> **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
 
-Configure your Databricks CLI connection:
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.10+ | Local dev | Required for the Databricks CLI |
+| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Bundle deployment and workspace interaction |
+| [Databricks SDK for Python](https://docs.databricks.com/en/dev-tools/sdk-python.html) | Latest | Local dev (optional) | For programmatic pipeline triggering |
+| Delta Live Tables runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
+
+Configure your Databricks CLI connection (local machine):
 
 ```bash
 # Authenticate the Databricks CLI (OAuth or PAT)
@@ -45,7 +49,7 @@ databricks catalogs list
 ### Getting a New Starter Project
 
 ```bash
-# Install the Databricks CLI
+# Install the Databricks CLI (local machine only — not needed on Databricks clusters)
 pip install databricks-cli
 
 # Create a new Asset Bundle from the default template

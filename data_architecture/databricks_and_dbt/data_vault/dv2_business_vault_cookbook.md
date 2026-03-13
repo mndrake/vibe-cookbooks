@@ -12,13 +12,17 @@ All Business Vault models read from Raw Vault structures. They never modify Raw 
 
 ### Installing Your Development Environment
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for dbt-databricks |
-| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.7.x | Core transformation framework |
-| [automate_dv](https://automate-dv.readthedocs.io/en/latest/) | 0.10.2 | PIT and Bridge macro library |
-| [dbt-utils](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/) | 1.3.0 | date_spine and test macros |
-| Databricks CLI | Latest | Workspace interaction |
+> **On Databricks:** dbt does not run on Databricks clusters. It runs on your local machine and submits SQL to Databricks via the SQL Warehouse HTTP path. PySpark and Delta Lake are pre-installed on every Databricks cluster — no local installation of these is needed to run dbt models.
+>
+> **Local development:** All tools below are installed on your local machine.
+
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for dbt-databricks |
+| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.7.x | Local dev | Core transformation framework — runs locally, connects to Databricks |
+| [automate_dv](https://automate-dv.readthedocs.io/en/latest/) | 0.10.2 | Local dev | PIT and Bridge macro library; installed via `dbt deps` |
+| [dbt-utils](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/) | 1.3.0 | Local dev | date_spine and test macros; installed via `dbt deps` |
+| Databricks CLI | Latest | Local dev | Workspace interaction and secrets management |
 
 Configure your dbt profile in `~/.dbt/profiles.yml`:
 

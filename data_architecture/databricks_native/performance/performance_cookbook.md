@@ -24,16 +24,18 @@ For architectural decisions and pattern trade-offs, see the companion document: 
 
 ### Installing Your Development Environment
 
-Install the following tools before proceeding:
+> **On Databricks (interactive notebooks or jobs):** PySpark, Delta Lake (`delta-spark`), and Photon are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+>
+> **Local development:** The tools below are installed on your local machine for CLI operations and local testing.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.10+ | Required for PySpark and Databricks SDK examples |
-| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Used for workspace interaction and job configuration |
-| `delta-spark` | Bundled with Databricks Runtime | DeltaTable API — no separate install needed |
-| Databricks SDK for Python | Latest | Optional; used for cluster config examples |
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.10+ | Local dev | Required for the Databricks CLI and local PySpark unit tests |
+| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Used for workspace interaction and job configuration |
+| `delta-spark` | Bundled with Databricks Runtime | Databricks (bundled) | Pre-installed; no separate install needed on a cluster |
+| Databricks SDK for Python | Latest | Local dev (optional) | Used for cluster config examples |
 
-Configure your Databricks connection:
+Configure your Databricks connection (local machine):
 
 ```bash
 # Authenticate the Databricks CLI

@@ -14,13 +14,15 @@ For the architectural decisions behind these patterns — when to use native Uni
 
 ### Installing Your Development Environment
 
-Install the following tools before proceeding:
+> **On Databricks (interactive notebooks or jobs):** Unity Catalog SQL runs directly in notebooks or on a SQL Warehouse — no local tooling needed for the native SQL examples. dbt does not run on Databricks clusters; it runs on your local machine and submits SQL via the SQL Warehouse HTTP path.
+>
+> **Local development:** All tools below are installed on your local machine.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for PySpark and dbt-databricks |
-| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.6+ | Required for dbt grants and Unity Catalog tag integration examples |
-| Databricks CLI | 0.200+ | Required for secrets management examples |
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for dbt-databricks and the Databricks CLI |
+| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.6+ | Local dev | Runs locally; required for dbt grants and Unity Catalog tag integration examples |
+| Databricks CLI | 0.200+ | Local dev | Required for secrets management examples |
 
 Configure your Databricks connection:
 

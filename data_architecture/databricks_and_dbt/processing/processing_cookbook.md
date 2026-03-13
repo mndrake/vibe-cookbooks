@@ -14,17 +14,19 @@ Each method section follows a consistent structure: the problem being solved, th
 
 ### Installing Your Development Environment
 
-Install the following tools before proceeding:
+> **On Databricks (interactive notebooks or jobs):** PySpark and Delta Lake are pre-installed with every Databricks Runtime — no `pip install` is needed to run the PySpark and SQL examples on a cluster. dbt does not run on Databricks clusters; it runs on your local machine and submits SQL via the SQL Warehouse HTTP path.
+>
+> **Local development:** All tools below are installed on your local machine.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for PySpark and dbt-databricks |
-| PySpark | Provided by Databricks Runtime | Do not install PySpark manually when running on a Databricks cluster; install locally for unit testing |
-| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | Latest (v0.200+) | Used for workspace interaction and secrets management |
-| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.7+ | Required for all dbt-based examples |
-| [dbt-utils](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/) | 1.0+ | Required for `dbt_utils.pivot()` and `dbt_utils.date_spine()` examples |
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for dbt-databricks and the Databricks CLI |
+| PySpark | Provided by Databricks Runtime | Local dev only | Bundled with Databricks Runtime — `pip install pyspark` only for local unit testing |
+| [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | Latest (v0.200+) | Local dev | Used for workspace interaction and secrets management |
+| [dbt-databricks](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup) | 1.7+ | Local dev | Runs locally, connects to Databricks; required for all dbt-based examples |
+| [dbt-utils](https://hub.getdbt.com/dbt-labs/dbt_utils/latest/) | 1.0+ | Local dev | Required for `dbt_utils.pivot()` and `dbt_utils.date_spine()` examples |
 
-Install Python dependencies:
+Install Python dependencies (local machine only — not needed on Databricks clusters):
 
 ```bash
 pip install databricks-cli dbt-databricks dbt-utils

@@ -16,16 +16,20 @@ The architectural rationale for choosing between these methods — latency requi
 
 ### Installing Your Development Environment
 
-Install the following tools before working with the examples in this cookbook.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark and Delta Lake are pre-installed with every Databricks Runtime — no `pip install` is needed to run the PySpark and SQL examples in this cookbook on a cluster.
+>
+> **dbt runs locally, not on Databricks clusters.** `dbt-databricks` is a CLI tool that runs on your local machine and submits SQL to Databricks via the SQL Warehouse HTTP path. Install it locally, not on a cluster.
+>
+> **Local development:** All tools below are installed on your local machine.
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| Python | 3.9+ | Required for PySpark and dbt-databricks |
-| Apache Spark via PySpark | 3.4+ | Installed automatically with Databricks Runtime; install locally with `pip install pyspark` for unit testing |
-| Databricks CLI | Latest (`databricks-sdk`) | Used for secrets management, workspace interaction, and deploying jobs |
-| dbt-databricks | Latest | Required only for the dbt Seeds and AutomateDV Stage Macro sections |
+| Tool | Version | Environment | Notes |
+|------|---------|-------------|-------|
+| Python | 3.9+ | Local dev | Required for dbt-databricks and the Databricks CLI |
+| Apache Spark via PySpark | 3.4+ | Local dev only | Bundled with Databricks Runtime — `pip install pyspark` only for local unit testing |
+| Databricks CLI | Latest | Local dev | Used for secrets management, workspace interaction, and deploying jobs |
+| dbt-databricks | Latest | Local dev | Runs on your local machine; required only for the dbt Seeds and AutomateDV Stage Macro sections |
 
-Configure your Databricks CLI connection:
+Configure your Databricks CLI connection (local machine):
 
 ```bash
 # Authenticate using OAuth (recommended for interactive use)
