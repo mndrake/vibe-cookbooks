@@ -15,8 +15,6 @@ This project provides practical, step-by-step data architecture cookbooks for Da
     - Title and objective
     - Prerequisites (if needed)
     - Step-by-step guide with both Python and SQL examples in the same file whenever possible
-    - Explicitly call out any differences in behavior, features, or limitations between Python and SQL approaches (not just syntax)
-    - Validation steps (Python and SQL)
     - References to official docs or sample notebooks
 - **File Organization:**
   - Organize cookbooks by topic under the `data_architecture/` folder (e.g., `data_architecture/ingestion/`)
@@ -24,7 +22,7 @@ This project provides practical, step-by-step data architecture cookbooks for Da
 - **Template Usage:**
   - Follow the provided cookbook template for new entries
   - Ensure each new cookbook is actionable and self-contained
-  - Always include both Python and SQL examples where possible, and highlight any functional differences
+  - Always include both Python and SQL examples where possible
 
 ## Example Topics (expand as needed)
 

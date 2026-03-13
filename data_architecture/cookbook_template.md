@@ -12,7 +12,7 @@
 
 This cookbook provides practical, step-by-step guidance for **[ingestion type / processing pattern / domain]** on Databricks. It covers [brief description of what patterns or methods are included] and is intended to be self-contained — no prior knowledge of the specific pattern is assumed.
 
-Each method section follows a consistent structure: the problem being solved, the recommended solution with Python and SQL examples, and any known concerns or trade-offs.
+Each method section follows a consistent structure: the problem being solved, the recommended solution with Python and SQL examples, any known concerns or trade-offs, and links to further reading.
 
 ---
 
@@ -134,30 +134,6 @@ The following Databricks and cloud infrastructure is required to run the example
 -- [Descriptive comment explaining what this block does]
 
 [SQL code here]
-```
-
-#### Differences Between Python and SQL Approaches
-
-> Do not limit this to syntax differences. Highlight functional differences in behaviour, available features, or limitations.
-
-| Aspect | Python (PySpark) | SQL |
-|--------|-----------------|-----|
-| [Schema evolution] | [Behaviour] | [Behaviour] |
-| [Error handling] | [Behaviour] | [Behaviour] |
-| [Feature availability] | [Behaviour] | [Behaviour] |
-
-#### Validation
-
-Confirm the solution is working correctly:
-
-```python
-# Python validation
-[Validation code — e.g., row counts, schema checks, record inspection]
-```
-
-```sql
--- SQL validation
-[Validation query]
 ```
 
 ### Discussion and Concerns
