@@ -313,6 +313,7 @@ ORDER BY 1 DESC;
 #### See Also
 
 - [Structured Streaming — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/)
+- [Table streaming reads and writes — Delta Lake](https://docs.delta.io/latest/delta-streaming.html)
 
 ---
 
@@ -491,6 +492,7 @@ LIMIT 20;
 #### See Also
 
 - [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/connect/external-systems/jdbc)
+- [DeltaTable Python API — Delta Lake](https://docs.delta.io/latest/api/python/api/delta.tables.DeltaTable.html)
 
 ---
 
@@ -874,6 +876,7 @@ LIMIT 5;
 - [Delta Live Tables Python API — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/python-ref)
 - `../data_vault/dv2_staging_cookbook.md` — Hub, link, and satellite loading using the staged data
 - `ingestion_patterns.md` — Raw Staging for Data Vault 2.0 (design considerations)
+- [Delta Lake schema evolution — Delta Lake](https://docs.delta.io/latest/delta-schema-evolution.html)
 
 ---
 

@@ -133,7 +133,7 @@ The following structure reflects a Data Vault project with a `raw_vault`, `busin
 - [Data Vault 2.0 standard — Dan Linstedt](https://www.danlinstedt.com/solutions-2/data-vault-basics/)
 - [AutomateDV documentation](https://automate-dv.readthedocs.io/en/latest/)
 - `security_cookbook.md` — RBAC setup and dynamic view RLS examples
-- `/home/user/vibe-cookbooks/data_architecture/data_vault/dv2_architecture.md` — Data Vault layer definitions
+- [Data Vault layer definitions — DV2 Architecture](../data_vault/dv2_architecture.md)
 
 ---
 
@@ -265,4 +265,4 @@ The Information Mart layer in Data Vault maps directly to the Gold layer in Meda
 - [Medallion architecture — Databricks](https://docs.databricks.com/en/lakehouse/medallion.html)
 - [Unity Catalog row filters and column masks — Databricks](https://docs.databricks.com/en/data-governance/unity-catalog/row-and-column-filters.html)
 - `security_cookbook.md` — RLS with dynamic views, Unity Catalog native column masks, Unity Catalog tag management, and audit logging examples
-- `/home/user/vibe-cookbooks/data_architecture/processing/processing_patterns.md` — Medallion layer responsibilities
+- [Medallion layer responsibilities — Processing Patterns](../processing/processing_patterns.md)

@@ -552,6 +552,7 @@ WHEN NOT MATCHED THEN
 ### See Also
 
 - [Databricks SCD documentation](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
+- [Table deletes, updates, and merges — Delta Lake](https://docs.delta.io/latest/delta-update.html)
 - [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_patterns.md)
 - [SCD Type 2 method — next section in this cookbook](#slowly-changing-dimensions--scd-type-2-native-delta-merge)
 
@@ -706,6 +707,7 @@ WHERE effective_from <= '2024-06-01'
 ### See Also
 
 - [Databricks SCD Type 2 with Delta Lake](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
+- [Table deletes, updates, and merges — Delta Lake](https://docs.delta.io/latest/delta-update.html)
 - [SCD Type 2 via DLT APPLY CHANGES INTO — next method](#slowly-changing-dimensions--scd-type-2-via-dlt-apply-changes-into)
 - [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_patterns.md)
 
@@ -1001,7 +1003,7 @@ WHERE event_date = current_date();
 
 ### See Also
 
-- [Delta Lake write modes documentation](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
+- [Delta Lake write modes documentation — Delta Lake](https://docs.delta.io/latest/delta-update.html)
 - [Delta Lake MERGE performance tuning](https://docs.databricks.com/en/delta/merge.html#performance-tuning)
 - [Databricks Jobs documentation](https://learn.microsoft.com/en-us/azure/databricks/jobs/)
 

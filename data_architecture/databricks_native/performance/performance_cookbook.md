@@ -128,6 +128,7 @@ DESCRIBE DETAIL catalog_name.schema_name.my_table;
 
 - [OPTIMIZE — Databricks SQL Language Manual](https://docs.databricks.com/en/sql/language-manual/delta-optimize.html)
 - [Delta Lake File Management — Databricks Documentation](https://docs.databricks.com/en/delta/optimize.html)
+- [Delta Lake optimizations — Delta Lake](https://docs.delta.io/latest/optimizations-oss.html)
 - [Performance Tuning Architectural Patterns](./performance_patterns.md)
 
 ---
@@ -974,7 +975,7 @@ HAVING cnt > 1;
 ### See Also
 
 - [Delta Lake MERGE INTO — Databricks Documentation](https://docs.databricks.com/en/delta/merge.html)
-- [DeltaTable.merge() Python API](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
+- [DeltaTable.merge() Python API — Delta Lake](https://docs.delta.io/latest/api/python/api/delta.tables.DeltaTable.html)
 - [dv2_raw_vault_cookbook.md — Vault Loading Patterns](../data_vault/dv2_raw_vault_cookbook.md)
 
 ---

@@ -80,6 +80,7 @@ Liquid Clustering is **incompatible with static partitioning on the same table**
 - [Delta Lake OPTIMIZE — Databricks Documentation](https://docs.databricks.com/en/sql/language-manual/delta-optimize.html)
 - [Liquid Clustering — Databricks Documentation](https://docs.databricks.com/en/delta/clustering.html)
 - [Delta Lake File Skipping — Databricks Documentation](https://docs.databricks.com/en/delta/data-skipping.html)
+- [Delta Lake optimizations — Delta Lake](https://docs.delta.io/latest/optimizations-oss.html)
 - [Performance Cookbook — Delta Lake Optimization](./performance_cookbook.md)
 
 ---

@@ -136,6 +136,7 @@ Continuous streaming should only be chosen when the business genuinely demands s
 
 - [Structured Streaming trigger types — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/triggers)
 - [Auto Loader availableNow trigger — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/production)
+- [Table streaming reads and writes — Delta Lake](https://docs.delta.io/latest/delta-streaming.html)
 
 ---
 
@@ -170,6 +171,7 @@ For Data Vault 2.0 pipelines using native PySpark/SQL staging (see below), hash 
 
 - [Auto Loader schema evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/schema)
 - [Delta table schema evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema)
+- [Delta Lake schema evolution — Delta Lake](https://docs.delta.io/latest/delta-schema-evolution.html)
 
 ---
 
