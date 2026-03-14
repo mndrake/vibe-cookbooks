@@ -196,6 +196,7 @@ WHEN MATCHED THEN
 
 - [Databricks MERGE INTO documentation](https://docs.databricks.com/en/sql/language-manual/delta-merge-into.html)
 - [Delta Lake upsert tutorial](https://docs.databricks.com/en/delta/merge.html)
+- [DeltaTable Python API — Delta Lake](https://docs.delta.io/latest/api/python/api/delta.tables.DeltaTable.html)
 - [Processing Architectural Patterns (Native) — Medallion layer responsibilities](./processing_patterns.md)
 
 ---
@@ -273,6 +274,8 @@ GROUP BY country_code;
 - [Delta Lake UPDATE documentation](https://docs.databricks.com/en/sql/language-manual/delta-update.html)
 - [Delta Lake DELETE documentation](https://docs.databricks.com/en/sql/language-manual/delta-delete-from.html)
 - [Deletion vectors in Delta Lake](https://docs.databricks.com/en/delta/deletion-vectors.html)
+- [Table deletes, updates, and merges — Delta Lake](https://docs.delta.io/latest/delta-update.html)
+- [DeltaTable Python API — Delta Lake](https://docs.delta.io/latest/api/python/api/delta.tables.DeltaTable.html)
 
 ---
 
