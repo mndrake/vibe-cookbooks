@@ -268,5 +268,5 @@ The Databricks query history UI for SQL Warehouses shows a Photon indicator per 
 
 - [Adaptive Query Execution — Databricks Documentation](https://docs.databricks.com/en/optimizations/aqe.html)
 - [Photon Engine — Databricks Documentation](https://docs.databricks.com/en/compute/photon.html)
-- [Delta Lake Performance — Databricks Documentation](https://docs.databricks.com/aws/en/delta/optimize)
+- [Delta Lake Performance — Databricks Documentation](https://learn.microsoft.com/en-us/azure/databricks/delta/optimize)
 - [Performance Cookbook — AQE and Photon](./performance_cookbook.md)

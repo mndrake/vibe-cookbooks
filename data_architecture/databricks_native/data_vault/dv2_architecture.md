@@ -118,7 +118,7 @@ The Medallion architecture (Bronze / Silver / Gold) is simpler to implement and 
 ### See Also
 
 - [Data Vault Alliance — What is Data Vault 2.0?](https://www.datavaultalliance.com/news/about-data-vault-2-0/)
-- [Databricks Lakehouse Architecture Guide](https://docs.databricks.com/aws/en/lakehouse-architecture/)
+- [Databricks Lakehouse Architecture Guide](https://learn.microsoft.com/en-us/azure/databricks/lakehouse-architecture/)
 - [Delta Live Tables Overview](https://docs.databricks.com/en/delta-live-tables/index.html)
 
 ---

@@ -205,7 +205,7 @@ Each notebook corresponds to one or more Databricks Jobs tasks. Task dependencie
 
 ### See Also
 
-- [Databricks Jobs documentation](https://docs.databricks.com/aws/en/jobs/)
+- [Databricks Jobs documentation](https://learn.microsoft.com/en-us/azure/databricks/jobs/)
 - [Delta Live Tables documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
 - [DLT APPLY CHANGES INTO](https://docs.databricks.com/en/delta-live-tables/cdc.html)
 - [Databricks Asset Bundles](https://docs.databricks.com/en/dev-tools/bundles/index.html)
@@ -264,7 +264,7 @@ Use Satellite design when:
 
 ### See Also
 
-- [Delta Lake SCD patterns — Databricks documentation](https://docs.databricks.com/aws/en/delta/merge)
+- [Delta Lake SCD patterns — Databricks documentation](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
 - [DLT APPLY CHANGES INTO — SCD Type 2](https://docs.databricks.com/en/delta-live-tables/cdc.html)
 - [Processing, Summarising, and Transformation Cookbook (Native) — SCD Type 2](./processing_cookbook.md)
 

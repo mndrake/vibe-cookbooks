@@ -974,7 +974,7 @@ HAVING cnt > 1;
 ### See Also
 
 - [Delta Lake MERGE INTO — Databricks Documentation](https://docs.databricks.com/en/delta/merge.html)
-- [DeltaTable.merge() Python API](https://docs.databricks.com/aws/en/delta/merge)
+- [DeltaTable.merge() Python API](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
 - [dv2_raw_vault_cookbook.md — Vault Loading Patterns](../data_vault/dv2_raw_vault_cookbook.md)
 
 ---

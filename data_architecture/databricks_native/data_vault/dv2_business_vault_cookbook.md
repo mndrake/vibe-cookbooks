@@ -451,7 +451,7 @@ WHERE p.AS_OF_DATE >= CAST(h.LOAD_DATE AS DATE)
 
 ### See Also
 
-- [Databricks Workflows task dependencies](https://docs.databricks.com/aws/en/jobs/)
+- [Databricks Workflows task dependencies](https://learn.microsoft.com/en-us/azure/databricks/jobs/)
 - [dv2_information_mart_cookbook.md](./dv2_information_mart_cookbook.md)
 - [dv2_architecture.md — Business Vault](./dv2_architecture.md)
 
@@ -646,7 +646,7 @@ WHERE b.CUSTOMER_ORDER_HK IS NULL;
 
 ### See Also
 
-- [Delta Lake OPTIMIZE and ZORDER](https://docs.databricks.com/aws/en/delta/tune-file-size)
+- [Delta Lake OPTIMIZE and ZORDER](https://learn.microsoft.com/en-us/azure/databricks/delta/tune-file-size)
 - [dv2_information_mart_cookbook.md](./dv2_information_mart_cookbook.md)
 
 ---
@@ -793,7 +793,7 @@ GROUP BY expectation_name;
 
 - [Delta Live Tables data quality expectations](https://docs.databricks.com/en/delta-live-tables/expectations.html)
 - [Databricks Lakehouse Monitoring](https://docs.databricks.com/en/lakehouse-monitoring/index.html)
-- [Databricks Workflows task dependencies](https://docs.databricks.com/aws/en/jobs/)
+- [Databricks Workflows task dependencies](https://learn.microsoft.com/en-us/azure/databricks/jobs/)
 
 ---
 
