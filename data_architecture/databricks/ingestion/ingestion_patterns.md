@@ -34,7 +34,7 @@ The following ingestion methods require data to be present in cloud storage befo
 |--------|-----------------------|--------|
 | **Auto Loader** | Yes | Reads file paths from ADLS/S3/GCS; upstream must deposit files there first |
 | **COPY INTO** | Yes | Reads from a cloud storage path; files must already be present at that path |
-| **SFTP Native Connector** | Yes | Databricks SFTP connector lands received files into a configured cloud storage path, then processes them |
+| **SFTP Native Connector** | No | The native SFTP connector reads directly from the SFTP server into Spark — no intermediate cloud storage staging step is required. The GA alternative (paramiko + Auto Loader) does require a landing zone. |
 
 For these methods, the landing zone is the contractual boundary between the upstream delivery system and the Databricks pipeline. The upstream system writes; Databricks reads. Neither side needs to know about the other's schedule.
 
@@ -83,7 +83,7 @@ Databricks supports multiple ingestion methods, each suited to different latency
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
 | **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
 | **SFTP (Native Connector)** | Receiving files from partner or vendor systems that deliver via SFTP; organisations that want a managed connector without custom Python scripting | ⚠️ **Public preview as of March 2026** — not recommended for critical production workloads without validating preview stability; not suitable where the source SFTP server has connectivity restrictions incompatible with Databricks-managed egress |
-| **Lakeflow Connect** | Managed ingestion from SaaS applications (Salesforce, Workday, ServiceNow, Google Analytics) and databases where building a custom connector is not justified; teams that want a fully native Databricks-managed pipeline with Unity Catalog governance and serverless compute | Sources not yet on the Lakeflow Connect connector catalogue; organisations with strict data residency requirements that need careful evaluation of data paths |
+| **Lakeflow Connect** | Managed ingestion from SaaS applications and databases where building a custom connector is not justified; teams that want a fully native Databricks-managed pipeline with Unity Catalog governance and serverless compute. GA as of March 2026: Salesforce, Workday, SQL Server. See the [connector catalogue](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list including preview connectors. | Sources not yet on the Lakeflow Connect connector catalogue; organisations with strict data residency requirements that need careful evaluation of data paths |
 | **Partner Connectors (Fivetran, Airbyte)** | SaaS sources not yet covered by Lakeflow Connect; organisations already invested in a specific connector platform | Sources supported natively by Lakeflow Connect, where consolidating on the Databricks-native toolchain is preferred |
 
 ### Trade-offs

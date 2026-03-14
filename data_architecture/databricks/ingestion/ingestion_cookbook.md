@@ -36,6 +36,43 @@ databricks auth login --host https://<your-workspace>.azuredatabricks.net
 databricks clusters list
 ```
 
+### Unity Catalog Prerequisite
+
+All table references in this cookbook use three-part naming (`catalog.schema.table`). Unity Catalog must be enabled on your workspace, and the referenced catalogs and schemas must already exist before running the examples. Replace `main`, `bronze`, `silver`, and similar names with your actual catalog and schema names.
+
+```sql
+-- Create schemas if they do not exist (run as a catalog admin)
+CREATE SCHEMA IF NOT EXISTS main.bronze;
+CREATE SCHEMA IF NOT EXISTS main.silver;
+CREATE SCHEMA IF NOT EXISTS main.bronze_lakeflow;
+CREATE SCHEMA IF NOT EXISTS main.bronze_fivetran;
+```
+
+See [Unity Catalog — getting started](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/get-started) for workspace enablement steps.
+
+### Storage Access (ADLS Gen2)
+
+Every `abfss://` URI in this cookbook requires the Databricks cluster to be authorised to read from or write to the storage account. Configure access via a **Unity Catalog external location** backed by a storage credential (managed identity or service principal). This is a one-time admin task per storage account.
+
+See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-external-locations-and-credentials) for setup instructions.
+
+### Databricks Secrets
+
+All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...")`. Create a secret scope and populate it before running those examples:
+
+```bash
+# Create a secret scope (once per scope, run on local machine with Databricks CLI)
+databricks secrets create-scope --scope jdbc-secrets
+databricks secrets create-scope --scope sftp-secrets
+databricks secrets create-scope --scope eventhubs-secrets
+
+# Add a secret (prompts for value — value is never stored in shell history)
+databricks secrets put-secret --scope jdbc-secrets --key sql-user
+databricks secrets put-secret --scope jdbc-secrets --key sql-password
+```
+
+See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secrets) for full documentation including permissions management.
+
 ---
 
 ## File Ingestion
@@ -98,6 +135,7 @@ LIMIT 10;
 - **Checkpoint durability:** The checkpoint directory must be on durable cloud storage. Deleting it causes Auto Loader to reprocess all files from the beginning.
 - **`schemaEvolutionMode` choices:** `addNewColumns` for bronze ingestion where all source columns must be captured. `failOnNewColumns` for silver/gold tables where schema drift should trigger investigation. `rescue` for highly variable sources.
 - **`trigger(availableNow=True)` vs. `trigger(once=True)`:** `availableNow=True` is the modern replacement for the deprecated `once=True`. Use `availableNow=True` for all new pipelines.
+- **Target table creation:** `.toTable("main.bronze.orders")` creates the Delta table automatically on first run if it does not exist, provided the executing principal has `CREATE TABLE` on the target schema. No `CREATE TABLE` DDL is required before the first run.
 
 #### See Also
 
@@ -162,6 +200,7 @@ FROM main.bronze.sales_transactions;
 
 - **COPY INTO vs. Auto Loader:** COPY INTO is simpler — no streaming context, no checkpoint directory, pure SQL — but does not support schema evolution. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
+- **`inferSchema = 'true'` for bronze CSV:** Schema inference is acceptable at the bronze layer when column types are not known in advance — for example, raw CSV files from an external partner. For reference tables or any table with fixed, known column types, always define the DDL explicitly and omit `inferSchema`. See the Reference Data section for an example with explicit DDL.
 
 #### See Also
 
@@ -239,7 +278,7 @@ FROM main.bronze.partner_orders;
 
 - **Public preview:** As of March 2026, this connector is in public preview ([docs](https://learn.microsoft.com/en-us/azure/databricks/ingestion/sftp)). Test in non-production before using in critical pipelines.
 - **GA alternative:** Download files from SFTP to ADLS using `paramiko`, then process from cloud storage with Auto Loader or COPY INTO — this two-stage approach is fully GA.
-- **Partial files:** SFTP sources do not provide atomic delivery guarantees. Use a `.done` sentinel file convention to avoid reading partial files.
+- **Partial files:** SFTP sources do not provide atomic delivery guarantees. A common convention is for the upstream system to write a zero-byte `.done` file (e.g., `orders_20260314.done`) after completing the corresponding data file upload. The Databricks pipeline lists the SFTP directory at the start of each run, identifies data files that have a matching `.done` file present, and processes only those pairs. The native SFTP connector does not implement this filter natively — it requires a pre-processing step (e.g., a Python Databricks Workflows task) that lists the directory, identifies complete pairs, and passes the confirmed file list to the read task. The GA alternative (paramiko → ADLS → Auto Loader) allows the `.done` check to be performed before files are moved to the landing zone.
 
 #### See Also
 
@@ -308,7 +347,8 @@ ORDER BY 1 DESC;
 #### Discussion and Concerns
 
 - **Checkpoint location:** Store checkpoints on durable cloud storage. Deleting the checkpoint causes the stream to restart from the beginning of the Event Hub retention window.
-- **Azure Event Hubs connector:** Install `com.microsoft.azure:azure-eventhubs-spark` as a Maven library on the cluster.
+- **Azure Event Hubs connector:** Install `com.microsoft.azure:azure-eventhubs-spark_2.12:<version>` as a Maven library via the cluster Libraries tab (Compute → your cluster → Libraries → Install New → Maven). Match the version to your Databricks Runtime's Scala version and check [azure-eventhubs-spark releases](https://github.com/Azure/azure-event-hubs-spark/releases) for the latest compatible version.
+- **`sc._jvm` and the encryption call:** `sc` is the `SparkContext`, automatically available in Databricks notebooks. The `sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(...)` call is a Py4J bridge into the Java library — it is required because the Event Hubs connector expects the connection string in encrypted form. This call is only available in Databricks notebook and job cluster environments where the Event Hubs library is installed; it will raise a `NameError` in standalone Python scripts that do not have `sc` pre-initialised.
 
 #### See Also
 
@@ -411,6 +451,7 @@ FROM STREAM(LIVE.orders_bronze);
 
 - **DLT incurs a DBU premium:** Evaluate whether a standard Structured Streaming job achieves the same outcome at lower cost for cost-sensitive workloads.
 - **Pipeline mode:** Triggered mode (default) runs once and terminates. Continuous mode runs indefinitely. Triggered mode is appropriate and cheaper for batch-oriented bronze ingestion.
+- **Deploying a DLT pipeline:** Create via the Databricks UI (Delta Live Tables → Create pipeline → specify the source notebook or file), via the CLI (`databricks pipelines create --json '{"name":"orders","libraries":[{"notebook":{"path":"/path/to/pipeline_notebook"}}]}'`), or via Databricks Asset Bundles with a `pipelines:` block in `databricks.yml`. See [Create a DLT pipeline](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/configure-pipeline) for the full UI and YAML reference.
 
 #### See Also
 
@@ -436,9 +477,36 @@ Use `spark.read.format("jdbc")` with partition configuration. Write to Delta usi
 ##### Python
 
 ```python
+from pyspark.sql.functions import max as spark_max
+from delta.tables import DeltaTable
+
 jdbc_url = "jdbc:sqlserver://myserver.database.windows.net:1433;database=SourceDB"
 jdbc_user = dbutils.secrets.get(scope="jdbc-secrets", key="sql-user")
 jdbc_password = dbutils.secrets.get(scope="jdbc-secrets", key="sql-password")
+
+# Determine partition bounds from the source table to avoid skewed partitions.
+# lowerBound and upperBound control partition generation, not row filtering —
+# all rows matching the WHERE clause are read regardless of these values.
+bounds_df = (
+    spark.read.format("jdbc")
+    .option("url", jdbc_url)
+    .option("user", jdbc_user)
+    .option("password", jdbc_password)
+    .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
+    .option("query", "SELECT MIN(order_id) AS lo, MAX(order_id) AS hi FROM dbo.orders")
+    .load()
+    .collect()[0]
+)
+lower_bound = str(bounds_df["lo"])
+upper_bound = str(bounds_df["hi"])
+
+# Retrieve the last loaded watermark from the target table.
+# On the first run, the table is empty and last_ts is None — the fallback triggers a full load.
+try:
+    last_ts = spark.table("main.bronze.orders").select(spark_max("updated_at")).collect()[0][0]
+    watermark = last_ts.strftime("%Y-%m-%d %H:%M:%S") if last_ts else "1900-01-01 00:00:00"
+except Exception:
+    watermark = "1900-01-01 00:00:00"
 
 df = (
     spark.read.format("jdbc")
@@ -446,15 +514,14 @@ df = (
     .option("user", jdbc_user)
     .option("password", jdbc_password)
     .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
-    .option("query", "SELECT * FROM dbo.orders WHERE updated_at >= '2026-03-12 00:00:00'")
+    .option("query", f"SELECT * FROM dbo.orders WHERE updated_at >= '{watermark}'")
     .option("partitionColumn", "order_id")
-    .option("lowerBound", "1")
-    .option("upperBound", "10000000")
+    .option("lowerBound", lower_bound)
+    .option("upperBound", upper_bound)
     .option("numPartitions", "8")
     .load()
 )
 
-from delta.tables import DeltaTable
 target = DeltaTable.forName(spark, "main.bronze.orders")
 (
     target.alias("t")
@@ -468,6 +535,16 @@ target = DeltaTable.forName(spark, "main.bronze.orders")
 ##### SQL
 
 ```sql
+-- Create the target table before the first JDBC load.
+-- DeltaTable.forName() in the Python MERGE will raise AnalysisException if the table does not exist.
+CREATE TABLE IF NOT EXISTS main.bronze.orders (
+    order_id     BIGINT,
+    customer_id  STRING,
+    order_total  DOUBLE,
+    updated_at   TIMESTAMP
+)
+USING DELTA;
+
 -- SQL cannot pass runtime credentials to JDBC options directly.
 -- Use Python above to load data; validate with SQL:
 
@@ -486,6 +563,8 @@ LIMIT 20;
 #### Discussion and Concerns
 
 - **Parallel reads increase source load:** 8 partitions = 8 concurrent connections. Use a read replica where available.
+- **Partition bounds:** `lowerBound` and `upperBound` define how Spark splits the read into `numPartitions` parallel range queries — they do not filter rows. Setting them to values far outside the actual data range produces heavily skewed partitions. The example above queries the actual `MIN`/`MAX` before each load to keep partitions balanced.
+- **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load.
 - **Hard deletes are invisible:** Incremental JDBC based on `updated_at` will not detect deleted rows. Use a CDC tool (Debezium) if delete propagation is required.
 - **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL/MySQL, install the driver JAR via the cluster Libraries tab.
 
@@ -509,6 +588,12 @@ The data platform must ingest data from Salesforce without building or maintaini
 #### Solution
 
 Create a Lakeflow Connect pipeline for Salesforce. The connector handles incremental extraction, schema evolution, and scheduling natively.
+
+> **Before running the code below:** Create the pipeline and configure credentials first. The code below grants permissions to the pipeline's service principal and validates the landed data — it assumes the pipeline already exists.
+>
+> **UI:** Databricks UI → Ingestion → Create pipeline → select Salesforce → enter your Salesforce OAuth credentials (connected app client ID, client secret, instance URL, and environment type) → select the objects to replicate → configure the destination catalog and schema → set the sync frequency.
+>
+> **Asset Bundles:** Define the pipeline in `databricks.yml` under `ingestion_pipelines:` and deploy with `databricks bundle deploy`. See [Lakeflow Connect Asset Bundles](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the YAML schema and credential configuration reference.
 
 ##### Python (Databricks Asset Bundles setup)
 
@@ -732,3 +817,4 @@ DESCRIBE HISTORY main.silver.ref_country_codes;
 | Lakeflow Connect authentication error | OAuth token expired or credentials rotated | Update connection credentials in Lakeflow Connect configuration |
 | Partner connector lands duplicate rows | Connector backfill triggered (e.g., after reconnection) | Deduplicate in silver using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY _fivetran_synced DESC)` |
 | DLT pipeline fails after source schema change | New column not matching a quality constraint | Review constraint; update expectation to handle the new column |
+| Auto Loader / COPY INTO encounters malformed or corrupt files | Source file contains rows with unexpected types, extra fields, or corrupt encoding | For Auto Loader: set `cloudFiles.schemaEvolutionMode = 'rescue'` so unexpected fields land in `_rescued_data` rather than failing the stream. For COPY INTO: add `'badRecordsPath' = 'abfss://...'` to `COPY_OPTIONS` to route bad records to a separate path instead of aborting the load. Monitor the rescue path and bad records path as part of your pipeline health checks. |
