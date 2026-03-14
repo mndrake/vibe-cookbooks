@@ -1111,7 +1111,7 @@ ORDER BY timestamp DESC;
 | Photon query ratio | Cluster Metrics / SQL Warehouse query history | Low Photon coverage indicating Python UDFs or non-eligible operations dominating |
 | AQE plan changes | Spark UI SQL tab | "AQE" labels on plan nodes — confirm skew handling and broadcast join conversion are firing |
 | Delta time travel versions | `DESCRIBE HISTORY catalog.schema.table` | Excessive version accumulation — VACUUM may be overdue |
-| DLT pipeline duration | DLT event log / Workflows UI | Increasing pipeline run times — may indicate small file accumulation or growing table scans |
+| SDP pipeline duration | SDP event log / Workflows UI | Increasing pipeline run times — may indicate small file accumulation or growing table scans |
 | Incremental MERGE performance | Workflows job run history — mart refresh task | MERGE taking as long as a full rebuild — watermark column may not be filtering correctly |
 
 ### Metrics for Success
@@ -1123,4 +1123,4 @@ ORDER BY timestamp DESC;
 - [ ] Incremental MERGE jobs process only changed rows — run times are proportional to the change volume, not the full table size
 - [ ] VACUUM runs weekly on all production tables; no table retains unreferenced files older than 14 days
 - [ ] Photon is confirmed active on all SQL Warehouse queries (Photon indicator in query history)
-- [ ] DLT pipelines in triggered mode complete and terminate within the scheduled batch window
+- [ ] SDP pipelines in triggered mode complete and terminate within the scheduled batch window
