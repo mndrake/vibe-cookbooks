@@ -25,7 +25,7 @@ This section covers what a developer needs installed and configured locally befo
 
 ### Installing Your Development Environment
 
-> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), Delta Live Tables, and `dbutils` are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a Databricks cluster.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), Lakeflow Spark Declarative Pipelines (SDP), and `dbutils` are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a Databricks cluster.
 >
 > **Local development:** The tools below are installed on your local machine for CLI operations, Asset Bundle deployment, and running unit tests outside Databricks.
 
@@ -34,7 +34,7 @@ This section covers what a developer needs installed and configured locally befo
 | Python | 3.10+ | Local dev | Required for the Databricks CLI and local unit tests |
 | [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Used for workspace interaction, secrets management, and Asset Bundle deployment |
 | `delta-spark` | Bundled with Databricks Runtime | Databricks (bundled) | Pre-installed; `pip install delta-spark` only needed for local unit testing — version must match your DBR |
-| Delta Live Tables runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
+| Lakeflow Spark Declarative Pipelines (SDP) runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
 | [Tool name] | [Version] | [Local dev / Databricks (bundled)] | [Purpose] |
 
 Configure your Databricks CLI connection (local machine):
@@ -89,14 +89,14 @@ The following Databricks and cloud infrastructure is required to run the example
 | Component | Purpose | Notes |
 |-----------|---------|-------|
 | Databricks Workspace | Execution environment | Unity Catalog must be enabled |
-| [Job cluster / SQL Warehouse / DLT pipeline] | Compute | [Specify type and sizing guidance] |
+| [Job cluster / SQL Warehouse / SDP pipeline] | Compute | [Specify type and sizing guidance] |
 | [Storage account — ADLS / S3 / GCS] | Source data location | Required for file ingestion examples |
 | [Unity Catalog — Catalog / Schema] | Target for output tables | Requires `CREATE TABLE` privilege |
 | [Additional component] | [Purpose] | [Notes] |
 
 ### [Infrastructure Element — Optional]
 
-> Include this subsection if a specific infrastructure component requires further setup explanation (e.g., configuring an ADLS landing zone path, enabling Change Data Feed on a Delta table, creating a DLT pipeline in the workspace). Remove this subsection if not needed.
+> Include this subsection if a specific infrastructure component requires further setup explanation (e.g., configuring an ADLS landing zone path, enabling Change Data Feed on a Delta table, creating an SDP pipeline in the workspace). Remove this subsection if not needed.
 
 [Setup steps or configuration details for the specific infrastructure element.]
 
@@ -156,7 +156,7 @@ The following Databricks and cloud infrastructure is required to run the example
 
 ### Monitoring Your Environment in Production
 
-[Describe how to observe this pattern in a running production environment. Include relevant Databricks monitoring surfaces: Databricks Jobs UI, DLT pipeline event logs, Spark UI, Unity Catalog audit logs, or `system.lakeflow` system tables.]
+[Describe how to observe this pattern in a running production environment. Include relevant Databricks monitoring surfaces: Databricks Jobs UI, SDP pipeline event logs, Spark UI, Unity Catalog audit logs, or `system.lakeflow` system tables.]
 
 | Signal | Where to Find It | What to Watch For |
 |--------|-----------------|-------------------|

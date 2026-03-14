@@ -3,7 +3,7 @@
 ## Databricks Native Stack
 
 > This file is the **Databricks-native** version of the Data Vault 2.0 Business Vault cookbook.
-> It uses Delta Live Tables (DLT), PySpark, DeltaTable MERGE, and Spark SQL exclusively.
+> It uses Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), PySpark, DeltaTable MERGE, and Spark SQL exclusively.
 > No dbt, AutomateDV, or dbt-utils dependencies are required.
 >
 > Equivalent dbt + AutomateDV version: [../../../databricks_and_dbt/data_vault/dv2_business_vault_cookbook.md](../../../databricks_and_dbt/data_vault/dv2_business_vault_cookbook.md)
@@ -16,7 +16,7 @@ This cookbook provides practical, step-by-step guidance for **building the Busin
 
 All Business Vault models read from Raw Vault structures. They never modify Raw Vault tables and are always rebuilt or incrementally maintained separately.
 
-PIT and Bridge tables are implemented using native PySpark window functions and DeltaTable MERGE operations instead of AutomateDV macros. Derived business rules are implemented as native Spark SQL `CREATE OR REPLACE TABLE AS SELECT` or DLT Python views.
+PIT and Bridge tables are implemented using native PySpark window functions and DeltaTable MERGE operations instead of AutomateDV macros. Derived business rules are implemented as native Spark SQL `CREATE OR REPLACE TABLE AS SELECT` or SDP Python views.
 
 ---
 
@@ -24,7 +24,7 @@ PIT and Bridge tables are implemented using native PySpark window functions and 
 
 ### Installing Your Development Environment
 
-> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and Lakeflow Spark Declarative Pipelines (SDP) are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
 >
 > **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
 
@@ -33,7 +33,7 @@ PIT and Bridge tables are implemented using native PySpark window functions and 
 | Python | 3.10+ | Local dev | Required for the Databricks CLI |
 | [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Bundle deployment and workspace interaction |
 | `delta-spark` | Bundled with Databricks Runtime | Databricks (bundled) | Pre-installed; no separate install needed on a cluster |
-| Delta Live Tables runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
+| Lakeflow Spark Declarative Pipelines (SDP) runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
 
 ### Getting a New Starter Project
 
@@ -62,7 +62,7 @@ databricks bundle deploy --target dev
 | Component | Purpose | Notes |
 |-----------|---------|-------|
 | Databricks Workspace | Execution environment | Unity Catalog enabled |
-| DLT Pipeline (serverless or classic) | Compute for business vault pipeline | Photon enabled |
+| SDP Pipeline (serverless or classic) | Compute for business vault pipeline | Photon enabled |
 | Unity Catalog — `business_vault` schema | Target for business vault tables | Pipeline service principal needs `CREATE TABLE`, `INSERT`, `SELECT` |
 | Unity Catalog — `raw_vault` schema | Source for all business vault models | `SELECT` privilege required |
 
@@ -73,7 +73,7 @@ databricks bundle deploy --target dev
 CREATE SCHEMA IF NOT EXISTS main.business_vault
   COMMENT 'Data Vault 2.0 business vault — derived rules, PIT, and bridge tables';
 
--- Grant privileges to the DLT pipeline service principal
+-- Grant privileges to the SDP pipeline service principal
 GRANT USE SCHEMA, CREATE TABLE, INSERT, SELECT ON SCHEMA main.business_vault
   TO `dlt-pipeline-service-principal@your-org.com`;
 
@@ -94,7 +94,7 @@ The customer satellite stores `CUSTOMER_NAME` in a comma-separated `LAST_NAME, F
 
 ### Solution
 
-Create a DLT Python view or `CREATE OR REPLACE TABLE` that SELECTs from the most recent satellite version and adds computed columns.
+Create an SDP Python view or `CREATE OR REPLACE TABLE` that SELECTs from the most recent satellite version and adds computed columns.
 
 #### SQL Example — Derived customer attributes (Spark SQL)
 
@@ -157,7 +157,7 @@ INNER JOIN main.raw_vault.hub_customer h
     ON c.CUSTOMER_HK = h.CUSTOMER_HK;
 ```
 
-#### Python Example — DLT view
+#### Python Example — SDP view
 
 ```python
 # DLT Python model equivalent for bv_customer_derived.
@@ -214,7 +214,7 @@ def bv_customer_derived():
     )
 ```
 
-**Functional difference between SQL and Python DLT approaches:** The SQL `CREATE OR REPLACE TABLE` is executed as a Databricks Workflows task and runs on a SQL Warehouse or cluster. The DLT Python `@dlt.view` is declared in a DLT pipeline notebook and runs on the DLT cluster. Use the DLT Python approach when the business vault is part of a DLT pipeline that also loads the raw vault. Use the Workflows SQL task approach for standalone refresh jobs.
+**Functional difference between SQL and Python SDP approaches:** The SQL `CREATE OR REPLACE TABLE` is executed as a Databricks Workflows task and runs on a SQL Warehouse or cluster. The SDP Python `@dlt.view` is declared in an SDP pipeline notebook and runs on the SDP cluster. Use the SDP Python approach when the business vault is part of an SDP pipeline that also loads the raw vault. Use the Workflows SQL task approach for standalone refresh jobs.
 
 #### Validation — SQL
 

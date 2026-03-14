@@ -3,7 +3,7 @@
 ## Databricks Native Stack
 
 > This file is the **Databricks-native** version of the Data Vault 2.0 staging cookbook.
-> It uses Delta Live Tables (DLT), PySpark, and Spark SQL exclusively.
+> It uses Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), PySpark, and Spark SQL exclusively.
 > No dbt, AutomateDV, or dbt-utils dependencies are required.
 >
 > Equivalent dbt + AutomateDV version: [../../../databricks_and_dbt/data_vault/dv2_staging_cookbook.md](../../../databricks_and_dbt/data_vault/dv2_staging_cookbook.md)
@@ -12,7 +12,7 @@
 
 ## Introduction
 
-This cookbook provides practical, step-by-step guidance for **staging data in a Data Vault 2.0 pipeline** on Databricks using the native stack. It covers how to derive hash keys, compute hashdiff columns, and prepare source data for vault loading using Delta Live Tables (DLT) Python and SQL pipelines with native PySpark and Spark SQL functions. These patterns are prerequisites for all Raw Vault loading.
+This cookbook provides practical, step-by-step guidance for **staging data in a Data Vault 2.0 pipeline** on Databricks using the native stack. It covers how to derive hash keys, compute hashdiff columns, and prepare source data for vault loading using Lakeflow Spark Declarative Pipelines (SDP) Python and SQL pipelines with native PySpark and Spark SQL functions. These patterns are prerequisites for all Raw Vault loading.
 
 Hash key derivation replaces AutomateDV's `stage` macro with `MD5()`, `SHA2()`, `CONCAT_WS()`, and `COALESCE()` applied consistently in every staging pipeline. Orchestration replaces `dbt run` with Databricks Workflows (Lakeflow Jobs).
 
@@ -22,7 +22,7 @@ Hash key derivation replaces AutomateDV's `stage` macro with `MD5()`, `SHA2()`, 
 
 ### Installing Your Development Environment
 
-> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake, and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake, and Lakeflow Spark Declarative Pipelines (SDP) are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
 >
 > **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
 
@@ -31,7 +31,7 @@ Hash key derivation replaces AutomateDV's `stage` macro with `MD5()`, `SHA2()`, 
 | Python | 3.10+ | Local dev | Required for the Databricks CLI |
 | [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Bundle deployment and workspace interaction |
 | [Databricks SDK for Python](https://docs.databricks.com/en/dev-tools/sdk-python.html) | Latest | Local dev (optional) | For programmatic pipeline triggering |
-| Delta Live Tables runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
+| Lakeflow Spark Declarative Pipelines (SDP) runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
 
 Configure your Databricks CLI connection (local machine):
 
@@ -81,7 +81,7 @@ databricks bundle deploy --target dev
 | Component | Purpose | Notes |
 |-----------|---------|-------|
 | Databricks Workspace | Execution environment | Unity Catalog must be enabled |
-| DLT Pipeline (serverless or classic) | Compute for staging pipeline | Photon enabled; set to triggered mode for batch |
+| SDP Pipeline (serverless or classic) | Compute for staging pipeline | Photon enabled; set to triggered mode for batch |
 | Unity Catalog — `staging` schema | Target for staging views/tables | Pipeline service principal needs `USE SCHEMA`, `CREATE TABLE` |
 | Unity Catalog — source schema or external table | Source data from ingestion layer | `SELECT` privilege required on source tables |
 
@@ -92,16 +92,16 @@ databricks bundle deploy --target dev
 CREATE SCHEMA IF NOT EXISTS main.staging
   COMMENT 'Data Vault 2.0 staging layer — hashed and prepped for vault loading';
 
--- Grant privileges to the DLT pipeline service principal
+-- Grant privileges to the SDP pipeline service principal
 GRANT USE SCHEMA, CREATE TABLE, SELECT ON SCHEMA main.staging
   TO `dlt-pipeline-service-principal@your-org.com`;
 ```
 
 ---
 
-## Staging — Native Hash Key Derivation with DLT
+## Staging — Native Hash Key Derivation with SDP
 
-Hash keys and hashdiff columns are derived inline in DLT staging notebooks using native PySpark functions. There is no macro library involved — the derivation is explicit, auditable, and co-located with the staging logic.
+Hash keys and hashdiff columns are derived inline in SDP staging notebooks using native PySpark functions. There is no macro library involved — the derivation is explicit, auditable, and co-located with the staging logic.
 
 ### Problem
 
@@ -109,9 +109,9 @@ Raw ingested data from source systems contains natural keys and payload columns,
 
 ### Solution
 
-Implement hash key derivation in each DLT staging notebook using the shared `vault_utils.py` helper (see [dv2_architecture.md](./dv2_architecture.md)). The helper enforces consistent null substitution (`^^`), uppercasing, trimming, and column ordering. Each staging notebook produces a DLT view or streaming view consumed by Raw Vault pipelines.
+Implement hash key derivation in each SDP staging notebook using the shared `vault_utils.py` helper (see [dv2_architecture.md](./dv2_architecture.md)). The helper enforces consistent null substitution (`^^`), uppercasing, trimming, and column ordering. Each staging notebook produces an SDP view or streaming view consumed by Raw Vault pipelines.
 
-#### Python DLT Example — `src/staging/stg_customer.py`
+#### Python SDP Example — `src/staging/stg_customer.py`
 
 ```python
 # Staging pipeline for the CRM customer source.
@@ -171,7 +171,7 @@ def stg_crm_customer():
     )
 ```
 
-#### SQL DLT Example — `src/staging/stg_customer.sql`
+#### SQL SDP Example — `src/staging/stg_customer.sql`
 
 ```sql
 -- Staging pipeline for the CRM customer source (SQL DLT syntax).
@@ -215,14 +215,14 @@ SELECT
 FROM STREAM(main.bronze.crm_customer);
 ```
 
-**Functional difference between Python and SQL DLT staging:**
+**Functional difference between Python and SQL SDP staging:**
 - Both approaches produce identical output. Python is preferable when the staging logic involves complex transformations, UDFs, or conditional column selection. SQL is preferable for teams more comfortable with SQL and for simpler projections.
-- Python DLT notebooks run on the DLT cluster using the PySpark API. SQL DLT notebooks use Spark SQL. Both are executed and managed by the DLT runtime.
+- Python SDP notebooks run on the SDP cluster using the PySpark API. SQL SDP notebooks use Spark SQL. Both are executed and managed by the SDP runtime.
 - Both support `@dlt.expect` / `CONSTRAINT ... EXPECT` data quality expectations, which fail or drop rows based on the violation mode.
 
 #### Validation — SQL
 
-After triggering the staging DLT pipeline, validate the output:
+After triggering the staging SDP pipeline, validate the output:
 
 ```sql
 -- Verify no null hash keys
@@ -273,7 +273,7 @@ print("All staging validations passed.")
 
 ### See Also
 
-- [Delta Live Tables Expectations Documentation](https://docs.databricks.com/en/delta-live-tables/expectations.html)
+- [Lakeflow Spark Declarative Pipelines Expectations Documentation](https://docs.databricks.com/en/delta-live-tables/expectations.html)
 - [dv2_architecture.md — Hash Key Design](./dv2_architecture.md#hash-key-design)
 - [dv2_raw_vault_cookbook.md](./dv2_raw_vault_cookbook.md)
 
@@ -376,7 +376,7 @@ Country codes, currency codes, and product categories are used across multiple v
 
 ### Solution
 
-Create a dedicated DLT staging view for each reference dataset. The hash key derivation pattern is identical to operational staging. The source is a Delta table rather than a streaming source.
+Create a dedicated SDP staging view for each reference dataset. The hash key derivation pattern is identical to operational staging. The source is a Delta table rather than a streaming source.
 
 #### Python Example — Reference staging
 
@@ -455,7 +455,7 @@ FROM main.reference.raw_country_codes;
 -- Note: LIVE VIEW (not STREAMING VIEW) because the source is a batch Delta table, not a stream
 ```
 
-**Functional difference between streaming and batch DLT views:**
+**Functional difference between streaming and batch SDP views:**
 - `CREATE OR REFRESH STREAMING VIEW` / `spark.readStream.table()` is used for sources that receive new rows incrementally (e.g., Auto Loader ingestion targets, Kafka topics, append-only Bronze tables).
 - `CREATE OR REFRESH LIVE VIEW` / `spark.table()` is used for batch sources that are fully reloaded on each pipeline run (e.g., reference data, small lookup tables).
 - Reference data staging should always use batch views because reference tables may have corrections or additions that replace existing rows — streaming views would miss corrections.
@@ -479,7 +479,7 @@ HAVING cnt > 1;
 ### Discussion and Concerns
 
 - **Do not mix hash conventions across staging pipelines:** All staging pipelines — operational and reference — must use the same `UPPER() + TRIM() + COALESCE(..., '^^')` normalisation pattern and the same algorithm (MD5 or SHA-256). A reference hub row hashed differently from the hub row produced by an operational staging pipeline will produce different hash values for the same real-world entity.
-- **Loading reference data from a CSV volume:** Upload the CSV to a Unity Catalog volume and read it using `spark.read.csv()` in a Databricks notebook, then write it to a managed Delta table. The DLT staging view then reads from that managed Delta table.
+- **Loading reference data from a CSV volume:** Upload the CSV to a Unity Catalog volume and read it using `spark.read.csv()` in a Databricks notebook, then write it to a managed Delta table. The SDP staging view then reads from that managed Delta table.
 
 ```python
 # Load reference CSV into a managed Delta table (run once, outside DLT)
@@ -492,7 +492,7 @@ df_ref.write.mode("overwrite").saveAsTable("main.reference.raw_country_codes")
 ### See Also
 
 - [Unity Catalog Volumes](https://docs.databricks.com/en/connect/unity-catalog/volumes.html)
-- [DLT Streaming vs Batch Sources](https://docs.databricks.com/en/delta-live-tables/load.html)
+- [SDP Streaming vs Batch Sources](https://docs.databricks.com/en/delta-live-tables/load.html)
 - [dv2_raw_vault_cookbook.md — Reference Structures](./dv2_raw_vault_cookbook.md#reference-structures)
 
 ---
@@ -503,13 +503,13 @@ df_ref.write.mode("overwrite").saveAsTable("main.reference.raw_country_codes")
 
 | Signal | Where to Find It | What to Watch For |
 |--------|-----------------|-------------------|
-| Null hash key count | DLT pipeline event log / pipeline UI expectations panel | Any `FAIL UPDATE` violation count > 0 indicates a hashing failure |
-| Staging row count vs. source row count | DLT pipeline metrics / custom query after each run | Mismatch indicates dropped rows — check `DROP ROW` expectation counts |
-| Hashdiff null count | DLT expectations panel for `*_hashdiff_not_null` constraint | Null hashdiff causes satellite to miss change detection |
-| Staging pipeline run time | Databricks Workflows UI / DLT pipeline event log | Slow staging runs indicate unoptimised source tables or large source volumes |
+| Null hash key count | SDP pipeline event log / pipeline UI expectations panel | Any `FAIL UPDATE` violation count > 0 indicates a hashing failure |
+| Staging row count vs. source row count | SDP pipeline metrics / custom query after each run | Mismatch indicates dropped rows — check `DROP ROW` expectation counts |
+| Hashdiff null count | SDP expectations panel for `*_hashdiff_not_null` constraint | Null hashdiff causes satellite to miss change detection |
+| Staging pipeline run time | Databricks Workflows UI / SDP pipeline event log | Slow staging runs indicate unoptimised source tables or large source volumes |
 | Pipeline expectation violation history | `SELECT * FROM main.staging.__dlt_expectations` | Review violation trends over time |
 
-### Querying DLT Expectation Results
+### Querying SDP Expectation Results
 
 ```sql
 -- DLT writes expectation results to an internal event log table

@@ -91,9 +91,9 @@ Architecture and design reference for transformation decisions. Read this when c
 |---------|------------------------------|
 | Medallion Architecture | Understand the Bronze → Silver → Gold layering model and the responsibilities of each layer |
 | Medallion vs. Data Vault 2.0 | Choose between a Medallion architecture and Data Vault 2.0 for your platform |
-| Native Pipeline Layer Mapping | Map PySpark notebooks, DLT pipelines, and Databricks Jobs to Medallion layers |
+| Native Pipeline Layer Mapping | Map PySpark notebooks, SDP pipelines, and Databricks Jobs to Medallion layers |
 | SCD vs. Satellite Design | Choose between SCD Type 2 (Medallion) and satellite tables (Data Vault) for tracking history |
-| PySpark vs. Spark SQL vs. DLT | Choose the right native transformation tool for a given workload |
+| PySpark vs. Spark SQL vs. SDP | Choose the right native transformation tool for a given workload |
 
 ---
 

@@ -3,7 +3,7 @@
 ## Databricks Native Stack
 
 > This file is the **Databricks-native** version of the Data Vault 2.0 architecture reference.
-> It uses Delta Live Tables (DLT), PySpark, Databricks Asset Bundles, and Databricks Workflows exclusively.
+> It uses Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), PySpark, Databricks Asset Bundles, and Databricks Workflows exclusively.
 > No dbt, AutomateDV, or dbt-utils dependencies are required.
 >
 > Equivalent dbt + AutomateDV version: [../../../databricks_and_dbt/data_vault/dv2_architecture.md](../../../databricks_and_dbt/data_vault/dv2_architecture.md)
@@ -16,7 +16,7 @@ Data Vault 2.0 (DV2) is a modelling methodology and architecture pattern designe
 
 Unlike dimensional modelling (Kimball) or third-normal form (Inmon), Data Vault separates structure from meaning. Raw data lands in vault tables exactly as it arrived, with no business rules applied. Business logic is layered on top in a separate Business Vault tier. Consumer-ready star schemas or flat tables are built in Information Marts.
 
-On Databricks (native stack), Data Vault 2.0 is implemented using Delta Live Tables (DLT) as the transformation and pipeline framework, native PySpark and Spark SQL for hash key derivation and vault loading patterns, and Databricks Workflows (Lakeflow Jobs) for orchestration. Delta Lake's append-optimised write semantics and Photon's vectorised execution make it a strong physical target for vault structures.
+On Databricks (native stack), Data Vault 2.0 is implemented using Lakeflow Spark Declarative Pipelines (SDP) as the transformation and pipeline framework, native PySpark and Spark SQL for hash key derivation and vault loading patterns, and Databricks Workflows (Lakeflow Jobs) for orchestration. Delta Lake's append-optimised write semantics and Photon's vectorised execution make it a strong physical target for vault structures.
 
 ---
 
@@ -70,7 +70,7 @@ Reference structures (`REF_HUB` and `REF_SAT`) are vault-pattern equivalents of 
 
 Examples include country code tables, currency codes, product category hierarchies, and status code mappings. Using reference structures rather than plain static tables ensures that vault-style governance (hash keys, load dates, record sources) is applied consistently across all data in the warehouse.
 
-In the native stack, reference data is loaded from Delta tables stored in Unity Catalog, populated either by a DLT pipeline reading from a managed source or by a simple `INSERT INTO` statement from a CSV uploaded to a volume.
+In the native stack, reference data is loaded from Delta tables stored in Unity Catalog, populated either by an SDP pipeline reading from a managed source or by a simple `INSERT INTO` statement from a CSV uploaded to a volume.
 
 ### Business Vault
 
@@ -119,7 +119,7 @@ The Medallion architecture (Bronze / Silver / Gold) is simpler to implement and 
 
 - [Data Vault Alliance — What is Data Vault 2.0?](https://www.datavaultalliance.com/news/about-data-vault-2-0/)
 - [Databricks Lakehouse Architecture Guide](https://learn.microsoft.com/en-us/azure/databricks/lakehouse-architecture/)
-- [Delta Live Tables Overview](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [Lakeflow Spark Declarative Pipelines Overview](https://docs.databricks.com/en/delta-live-tables/index.html)
 
 ---
 
@@ -132,7 +132,7 @@ The Raw Vault is a **structural, source-faithful, append-only** layer. Its only 
 Rules that must be enforced in the Raw Vault:
 
 - **No business rules.** Do not rename, reclassify, combine, or interpret source values. If the source sends a status code of `X`, store `X`.
-- **Append-only.** Never issue UPDATE or DELETE statements against Hub, Link, or Satellite tables. New information is represented as new rows. In DLT, this is enforced by using `APPEND FLOW` or `@dlt.append_flow` and avoiding `APPLY CHANGES INTO` for raw vault tables.
+- **Append-only.** Never issue UPDATE or DELETE statements against Hub, Link, or Satellite tables. New information is represented as new rows. In SDP, this is enforced by using `APPEND FLOW` or `@dlt.append_flow` and avoiding `APPLY CHANGES INTO` for raw vault tables.
 - **Hash keys only.** Raw Vault tables reference each other via hash keys, never via natural keys or integer sequences from source systems.
 - **No joins to business vault or mart.** Raw Vault pipelines read from staging only.
 - **Full source fidelity.** If the source column is NULL, store NULL (subject to null substitution rules applied in staging before hashing).
@@ -168,7 +168,7 @@ Rules for the Information Mart:
 
 ### See Also
 
-- [Delta Live Tables Pipeline Configuration](https://docs.databricks.com/en/delta-live-tables/configure-pipeline.html)
+- [Lakeflow Spark Declarative Pipelines Pipeline Configuration](https://docs.databricks.com/en/delta-live-tables/configure-pipeline.html)
 - [dv2_staging_cookbook.md](./dv2_staging_cookbook.md)
 - [dv2_raw_vault_cookbook.md](./dv2_raw_vault_cookbook.md)
 - [dv2_business_vault_cookbook.md](./dv2_business_vault_cookbook.md)
@@ -187,7 +187,7 @@ Two hashing algorithms are in common use for Data Vault 2.0:
 | MD5 | Faster on Photon; 16-byte output; widely supported | Higher (though still negligible) collision probability | Performance-sensitive pipelines; non-regulated environments |
 | SHA-256 | Lower collision probability; 32-byte output | Slightly slower; larger storage footprint | Compliance-driven environments (SOX, HIPAA, FCA) |
 
-**The algorithm must be chosen once and applied consistently across every staging notebook, DLT pipeline, and SQL script in the project.** In the native stack, enforce this by centralising the hash function in a shared utility module imported by all staging pipelines.
+**The algorithm must be chosen once and applied consistently across every staging notebook, SDP pipeline, and SQL script in the project.** In the native stack, enforce this by centralising the hash function in a shared utility module imported by all staging pipelines.
 
 ### Column Ordering Conventions
 
@@ -214,7 +214,7 @@ Rules:
 
 ### Native Hash Key Pattern
 
-In PySpark (used in DLT Python pipelines and notebooks):
+In PySpark (used in SDP Python pipelines and notebooks):
 
 ```python
 from pyspark.sql.functions import md5, sha2, concat_ws, coalesce, lit, upper, trim, col
@@ -240,7 +240,7 @@ hashdiff = md5(concat_ws("||",
 ))
 ```
 
-In Spark SQL / DLT SQL:
+In Spark SQL / SDP SQL:
 
 ```sql
 -- Hub hash key
@@ -306,7 +306,7 @@ Enforce consistency by:
 - Always applying `UPPER()` and `TRIM()` to string values before hashing.
 - Applying the same date/timestamp format mask to all date columns before hashing.
 - Using the shared `vault_utils.py` module (above) rather than repeating transformation logic in each individual staging pipeline.
-- Including hash derivation logic in DLT data quality expectations that fail the pipeline if a null hash key is produced.
+- Including hash derivation logic in SDP data quality expectations that fail the pipeline if a null hash key is produced.
 
 ### See Also
 
@@ -317,11 +317,11 @@ Enforce consistency by:
 
 ---
 
-## Databricks Asset Bundles and DLT Pipeline Configuration
+## Databricks Asset Bundles and SDP Pipeline Configuration
 
 ### Project Layout
 
-Replace the dbt project structure with a Databricks Asset Bundle (DAB). A DAB is a YAML-based project definition that packages DLT pipelines, notebooks, and Databricks Workflow job definitions for deployment across environments.
+Replace the dbt project structure with a Databricks Asset Bundle (DAB). A DAB is a YAML-based project definition that packages SDP pipelines, notebooks, and Databricks Workflow job definitions for deployment across environments.
 
 Recommended project layout:
 
@@ -382,7 +382,7 @@ include:
   - resources/jobs/*.yml
 ```
 
-### DLT Pipeline Configuration — `resources/pipelines/raw_vault_pipeline.yml`
+### SDP Pipeline Configuration — `resources/pipelines/raw_vault_pipeline.yml`
 
 ```yaml
 resources:
@@ -436,7 +436,7 @@ databricks bundle deploy --target prod
 ### See Also
 
 - [Databricks Asset Bundles Documentation](https://docs.databricks.com/en/dev-tools/bundles/index.html)
-- [Delta Live Tables Pipeline Configuration Reference](https://docs.databricks.com/en/delta-live-tables/configure-pipeline.html)
+- [Lakeflow Spark Declarative Pipelines Pipeline Configuration Reference](https://docs.databricks.com/en/delta-live-tables/configure-pipeline.html)
 
 ---
 
@@ -448,14 +448,14 @@ A Data Vault 2.0 implementation on Databricks with Unity Catalog should use sepa
 
 Recommended schema layout within a single Unity Catalog catalog (e.g., `main` or a project-specific catalog):
 
-| Schema | Contents | DLT Pipeline |
+| Schema | Contents | SDP Pipeline |
 |--------|----------|--------------|
 | `staging` | Staging views with hash keys and hashdiffs | `staging_pipeline` |
 | `raw_vault` | Hubs, Links, Satellites, Reference structures | `raw_vault_pipeline` |
 | `business_vault` | PIT, Bridge, derived business rules | `business_vault_pipeline` |
 | `marts` | Dimensions, Facts, wide flat tables | `information_mart_pipeline` |
 
-Each DLT pipeline is configured with a `target` schema:
+Each SDP pipeline is configured with a `target` schema:
 
 ```yaml
 # In pipeline YAML configuration
@@ -493,7 +493,7 @@ Enforce least-privilege access using Unity Catalog grants at the schema level:
 
 | Principal | `staging` | `raw_vault` | `business_vault` | `marts` |
 |-----------|-----------|-------------|-----------------|---------|
-| DLT pipeline service principal | SELECT | CREATE TABLE, INSERT, SELECT | CREATE TABLE, INSERT, SELECT | CREATE TABLE, INSERT, SELECT |
+| SDP pipeline service principal | SELECT | CREATE TABLE, INSERT, SELECT | CREATE TABLE, INSERT, SELECT | CREATE TABLE, INSERT, SELECT |
 | Data engineers | SELECT | SELECT | SELECT | SELECT |
 | Data analysts | — | — | SELECT (non-PII only) | SELECT |
 | BI tool service account | — | — | — | SELECT |
@@ -514,7 +514,7 @@ GRANT SELECT ON SCHEMA main.marts
   TO `data-analysts@your-org.com`;
 ```
 
-Masking policies for PII columns (email, phone, full name) are applied at the `raw_vault` and `marts` layers. Non-privileged roles see masked values; the DLT service principal and PII stewards see clear text.
+Masking policies for PII columns (email, phone, full name) are applied at the `raw_vault` and `marts` layers. Non-privileged roles see masked values; the SDP service principal and PII stewards see clear text.
 
 ### See Also
 

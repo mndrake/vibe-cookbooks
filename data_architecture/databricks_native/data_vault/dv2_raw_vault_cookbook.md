@@ -3,7 +3,7 @@
 ## Databricks Native Stack
 
 > This file is the **Databricks-native** version of the Data Vault 2.0 raw vault cookbook.
-> It uses Delta Live Tables (DLT), PySpark, DeltaTable MERGE, and Spark SQL exclusively.
+> It uses Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), PySpark, DeltaTable MERGE, and Spark SQL exclusively.
 > No dbt, AutomateDV, or dbt-utils dependencies are required.
 >
 > Equivalent dbt + AutomateDV version: [../../../databricks_and_dbt/data_vault/dv2_raw_vault_cookbook.md](../../../databricks_and_dbt/data_vault/dv2_raw_vault_cookbook.md)
@@ -24,7 +24,7 @@ Hub and Link loading uses `DeltaTable.merge()` with `whenNotMatchedInsertAll()` 
 
 ### Installing Your Development Environment
 
-> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and Lakeflow Spark Declarative Pipelines (SDP) are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
 >
 > **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
 
@@ -33,7 +33,7 @@ Hub and Link loading uses `DeltaTable.merge()` with `whenNotMatchedInsertAll()` 
 | Python | 3.10+ | Local dev | Required for the Databricks CLI |
 | [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Bundle deployment and workspace interaction |
 | `delta-spark` | Bundled with Databricks Runtime | Databricks (bundled) | Pre-installed; no separate install needed on a cluster |
-| Delta Live Tables runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
+| Lakeflow Spark Declarative Pipelines (SDP) runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
 
 ### Getting a New Starter Project
 
@@ -62,7 +62,7 @@ databricks bundle deploy --target dev
 | Component | Purpose | Notes |
 |-----------|---------|-------|
 | Databricks Workspace | Execution environment | Unity Catalog enabled |
-| DLT Pipeline (serverless or classic) | Compute for raw vault pipeline | Photon enabled |
+| SDP Pipeline (serverless or classic) | Compute for raw vault pipeline | Photon enabled |
 | Unity Catalog — `raw_vault` schema | Target for vault tables | Pipeline service principal needs `CREATE TABLE`, `INSERT`, `SELECT` |
 | Unity Catalog — `staging` schema | Source for staging views | `SELECT` privilege required |
 
@@ -73,7 +73,7 @@ databricks bundle deploy --target dev
 CREATE SCHEMA IF NOT EXISTS main.raw_vault
   COMMENT 'Data Vault 2.0 raw vault — structural, append-only, no business rules';
 
--- Grant privileges to the DLT pipeline service principal
+-- Grant privileges to the SDP pipeline service principal
 GRANT USE SCHEMA, CREATE TABLE, INSERT, SELECT ON SCHEMA main.raw_vault
   TO `dlt-pipeline-service-principal@your-org.com`;
 
@@ -131,7 +131,7 @@ def hub_customer():
     return crm_customers.union(ecommerce_customers).union(mobile_customers).distinct()
 ```
 
-When the hub table is created for the first time and you need subsequent incremental MERGE behaviour in a non-DLT context (e.g., a Databricks Workflow notebook task), use the explicit MERGE pattern:
+When the hub table is created for the first time and you need subsequent incremental MERGE behaviour in a non-SDP context (e.g., a Databricks Workflow notebook task), use the explicit MERGE pattern:
 
 ```python
 # Hub MERGE pattern for use in Databricks Workflow notebook tasks
@@ -539,7 +539,7 @@ WHERE NOT EXISTS (
 **Functional difference between Python and SQL satellite loading:**
 - Both approaches apply the same anti-join logic to detect genuine changes. The Python approach is more readable for complex multi-column satellites and is easier to test with unit tests.
 - The SQL `NOT EXISTS` subquery with `ROW_NUMBER()` is equivalent to the PySpark window-function anti-join. On large satellites, both benefit from `ZORDER BY CUSTOMER_HK` on the satellite table to speed up the latest-row lookup.
-- In DLT, the Python approach is preferred because DLT streaming handles incremental state automatically. Outside DLT, both SQL and Python are equally valid.
+- In SDP, the Python approach is preferred because SDP streaming handles incremental state automatically. Outside SDP, both SQL and Python are equally valid.
 
 #### Validation — SQL
 
@@ -982,8 +982,8 @@ HAVING cnt > 1;
 | Satellite hashdiff uniqueness per entity | Custom SQL check on (CUSTOMER_HK, LOAD_DATE) after each load | Duplicates indicate satellite anti-join failure |
 | Link referential integrity | SQL check: link FK left-join to hub where hub key IS NULL | Missing hub rows indicate staging pipeline ordering issue |
 | Satellite partition count | `DESCRIBE DETAIL main.raw_vault.sat_customer_details` | Unexpected partition explosion indicates bad LOAD_DATE value |
-| DLT pipeline run duration | Databricks Workflows UI / DLT pipeline event log | Hub/link runs should be seconds; satellite runs grow over time |
-| DLT expectation violations | DLT pipeline UI — Expectations panel | Any `FAIL UPDATE` violations must trigger an alert |
+| SDP pipeline run duration | Databricks Workflows UI / SDP pipeline event log | Hub/link runs should be seconds; satellite runs grow over time |
+| SDP expectation violations | SDP pipeline UI — Expectations panel | Any `FAIL UPDATE` violations must trigger an alert |
 
 ### Running OPTIMIZE After Each Load
 
@@ -1002,4 +1002,4 @@ OPTIMIZE main.raw_vault.sat_order_details    ZORDER BY (ORDER_HK);
 - [ ] All link foreign keys resolve to rows in their respective hub tables
 - [ ] All satellite tables have `delta.appendOnly = true` set — verified with `SHOW TBLPROPERTIES`
 - [ ] Satellite tables are partitioned by `LOAD_DATE` and optimised with `ZORDER BY` on the parent hash key after each load
-- [ ] DLT pipeline expectation violations (null hash keys, null hashdiffs) are zero on every pipeline run
+- [ ] SDP pipeline expectation violations (null hash keys, null hashdiffs) are zero on every pipeline run
