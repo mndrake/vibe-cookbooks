@@ -411,7 +411,7 @@ WHERE event_date = '2026-03-01';
 ### See Also
 
 - [Delta Lake Partitioning — Databricks Documentation](https://docs.databricks.com/en/delta/partitions.html)
-- [When to Partition — Databricks Blog](https://www.databricks.com/blog/2020/12/08/better-data-skipping-with-delta-lake.html)
+- [Data Skipping for Delta Lake — Databricks Documentation](https://docs.databricks.com/en/delta/data-skipping.html)
 - [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_patterns.md)
 
 ---
