@@ -551,7 +551,7 @@ WHEN NOT MATCHED THEN
 
 ### See Also
 
-- [Databricks SCD documentation](https://docs.databricks.com/en/delta/slowly-changing-data.html)
+- [Databricks SCD documentation](https://docs.databricks.com/aws/en/delta/merge)
 - [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_patterns.md)
 - [SCD Type 2 method — next section in this cookbook](#slowly-changing-dimensions--scd-type-2-native-delta-merge)
 
@@ -705,7 +705,7 @@ WHERE effective_from <= '2024-06-01'
 
 ### See Also
 
-- [Databricks SCD Type 2 with Delta Lake](https://docs.databricks.com/en/delta/slowly-changing-data.html)
+- [Databricks SCD Type 2 with Delta Lake](https://docs.databricks.com/aws/en/delta/merge)
 - [SCD Type 2 via DLT APPLY CHANGES INTO — next method](#slowly-changing-dimensions--scd-type-2-via-dlt-apply-changes-into)
 - [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_patterns.md)
 
@@ -1001,9 +1001,9 @@ WHERE event_date = current_date();
 
 ### See Also
 
-- [Delta Lake write modes documentation](https://docs.databricks.com/en/delta/delta-update.html)
+- [Delta Lake write modes documentation](https://docs.databricks.com/aws/en/delta/merge)
 - [Delta Lake MERGE performance tuning](https://docs.databricks.com/en/delta/merge.html#performance-tuning)
-- [Databricks Jobs documentation](https://docs.databricks.com/en/workflows/jobs/index.html)
+- [Databricks Jobs documentation](https://docs.databricks.com/aws/en/jobs/)
 
 ---
 
@@ -1412,7 +1412,7 @@ SELECT
 
 ### See Also
 
-- [Databricks Jobs documentation](https://docs.databricks.com/en/workflows/jobs/index.html)
+- [Databricks Jobs documentation](https://docs.databricks.com/aws/en/jobs/)
 - [Databricks Asset Bundles documentation](https://docs.databricks.com/en/dev-tools/bundles/index.html)
 - [Databricks Jobs CI/CD with GitHub Actions](https://docs.databricks.com/en/dev-tools/bundles/ci-cd.html)
 - [Delta Live Tables pipeline orchestration](https://docs.databricks.com/en/delta-live-tables/index.html)
