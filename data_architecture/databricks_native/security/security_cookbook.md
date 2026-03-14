@@ -315,7 +315,7 @@ LIMIT 10;
 
 - [Databricks Secrets — Databricks](https://docs.databricks.com/en/security/secrets/index.html)
 - [Azure Key Vault-backed secret scope — Databricks](https://docs.databricks.com/en/security/secrets/secret-scopes.html#azure-key-vault-backed-scopes)
-- [Managed identities for Azure Databricks — Microsoft](https://learn.microsoft.com/en-us/azure/databricks/administration-guide/cloud-configurations/azure/managed-identities-storage)
+- [Managed identities for Azure Databricks — Microsoft](https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/cloud-storage/azure-managed-identities)
 
 ---
 
