@@ -1,7 +1,7 @@
 # Ingestion Cookbook
 ## Databricks Native Stack
 
-> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, SFTP connector, Structured Streaming, Delta Live Tables, JDBC, Lakeflow Connect, Partner Connectors, and native reference data loading with COPY INTO. It does not cover dbt, dbt seeds, or AutomateDV. For the equivalent guide covering the Databricks + dbt + AutomateDV stack, see `../databricks_and_dbt/ingestion/ingestion_cookbook.md`.
+> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, SFTP connector, Structured Streaming, Lakeflow Spark Declarative Pipelines (SDP), JDBC, Lakeflow Connect, Partner Connectors, and native reference data loading with COPY INTO. It does not cover dbt, dbt seeds, or AutomateDV. For the equivalent guide covering the Databricks + dbt + AutomateDV stack, see `../databricks_and_dbt/ingestion/ingestion_cookbook.md`.
 
 ---
 
@@ -11,17 +11,100 @@ This cookbook provides practical, step-by-step guidance for data ingestion on Da
 
 The architectural rationale for choosing between methods is covered in `ingestion_patterns.md` in the same directory.
 
+**How to use this cookbook with the patterns doc:** Use `ingestion_patterns.md` to select a method based on your source type, latency, and operational requirements, then return here for the implementation. Quick navigation:
+
+| If your source is... | Jump to... |
+|----------------------|-----------|
+| Files arriving in cloud storage (continuous) | [File Ingestion — Auto Loader](#file-ingestion--auto-loader) |
+| Files arriving on a schedule (batch) | [File Ingestion — COPY INTO](#file-ingestion--copy-into) |
+| SFTP partner delivery | [File Ingestion — SFTP](#file-ingestion--sftp-native-databricks-connector) |
+| Kafka / Azure Event Hubs | [Streaming Ingestion — Structured Streaming](#streaming-ingestion--structured-streaming) |
+| Managed pipeline with data quality enforcement | [Pipeline Ingestion — Lakeflow Spark Declarative Pipelines](#pipeline-ingestion--lakeflow-spark-declarative-pipelines) |
+| Relational database (SQL Server, PostgreSQL) | [Database Ingestion — JDBC](#database-ingestion--jdbc) |
+| SaaS application (Salesforce, Workday) | [Managed Ingestion — Lakeflow Connect](#managed-ingestion--lakeflow-connect) |
+| Third-party connector (Fivetran, Airbyte) | [Managed Ingestion — Partner Connectors](#managed-ingestion--partner-connectors-fivetran-airbyte) |
+| Reference / lookup tables | [Reference Data Loading](#reference-data-loading-native) |
+| Data Vault 2.0 staging | [Data Vault Staging](#data-vault-staging--native-pyspark-and-sql) |
+
+---
+
+## Infrastructure Prerequisites
+
+Before running any example in this cookbook, ensure the following infrastructure is in place. These are one-time setup tasks typically performed by a workspace admin.
+
+### Databricks Runtime Version
+
+All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or later**. Specific minimum version requirements:
+
+| Feature | Minimum DBR |
+|---------|-------------|
+| Auto Loader `schemaEvolutionMode`, `trigger(availableNow=True)` | 11.3 LTS |
+| SFTP native connector | 13.3 LTS |
+| `system.lakeflow.*` SDP system tables | 13.3 LTS |
+| Liquid Clustering (referenced in performance cookbook) | 13.3 LTS |
+
+**Recommendation:** Use **DBR 14.3 LTS or later** for new workloads — it is the current long-term support release as of March 2026 and includes all features referenced in this cookbook.
+
+### Cluster Configuration
+
+| Scenario | Recommended Configuration |
+|----------|--------------------------|
+| Auto Loader / JDBC batch jobs | Job cluster, auto-terminate after job; start with 2–4 workers, scale based on actual throughput |
+| Structured Streaming (continuous) | Job cluster with auto-scaling, or a Databricks Continuous Job; always-on incurs continuous cost |
+| JDBC with `numPartitions = 8` | At least 4 workers so partitions distribute across executors; single-node clusters will serialise reads |
+| SDP pipelines | SDP-managed cluster — do not configure separately; set `cluster_autoscale` in the pipeline settings |
+| One-off loads / development | All-purpose cluster; not recommended for production recurring jobs due to cost and contention |
+
+See [Cluster configuration — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/compute/configure) and the `performance_cookbook.md` in this repository for sizing guidance.
+
+### Unity Catalog Prerequisite
+
+All table references in this cookbook use three-part naming (`catalog.schema.table`). Unity Catalog must be enabled on your workspace, and the referenced catalogs and schemas must already exist before running the examples. Replace `main`, `bronze`, `silver`, and similar names with your actual catalog and schema names.
+
+```sql
+-- Create schemas if they do not exist (run as a catalog admin)
+CREATE SCHEMA IF NOT EXISTS main.bronze;
+CREATE SCHEMA IF NOT EXISTS main.silver;
+CREATE SCHEMA IF NOT EXISTS main.bronze_lakeflow;
+CREATE SCHEMA IF NOT EXISTS main.bronze_fivetran;
+```
+
+See [Unity Catalog — getting started](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/get-started) for workspace enablement steps.
+
+### Storage Access (ADLS Gen2)
+
+Every `abfss://` URI in this cookbook requires the Databricks cluster to be authorised to read from or write to the storage account. Configure access via a **Unity Catalog external location** backed by a storage credential (managed identity or service principal). This is a one-time admin task per storage account.
+
+See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-external-locations-and-credentials) for setup instructions.
+
+### Databricks Secrets
+
+All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...")`. Create a secret scope and populate it before running those examples:
+
+```bash
+# Create a secret scope (once per scope, run on local machine with Databricks CLI)
+databricks secrets create-scope --scope jdbc-secrets
+databricks secrets create-scope --scope sftp-secrets
+databricks secrets create-scope --scope eventhubs-secrets
+
+# Add a secret (prompts for value — value is never stored in shell history)
+databricks secrets put-secret --scope jdbc-secrets --key sql-user
+databricks secrets put-secret --scope jdbc-secrets --key sql-password
+```
+
+See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secrets) for full documentation including permissions management.
+
 ---
 
 ## Development Environment Pre-Requisites
 
-> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), Delta Live Tables, and `dbutils` are pre-installed with every Databricks Runtime. No `pip install` commands are needed to run the code examples in this cookbook on a Databricks cluster.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), Lakeflow Spark Declarative Pipelines, and `dbutils` are pre-installed with every Databricks Runtime. No `pip install` commands are needed to run the code examples in this cookbook on a Databricks cluster.
 >
 > **Local development:** The tools below are required on your local machine for Databricks CLI operations, Asset Bundle deployment, and running unit tests outside Databricks.
 
 | Tool | Version | Environment | Notes |
 |------|---------|-------------|-------|
-| Python | 3.9+ | Local dev | Required for the Databricks CLI and local PySpark unit tests |
+| Python | 3.10+ | Local dev | Required for the Databricks CLI and local PySpark unit tests; 3.10+ aligns with DBR 13.3 LTS bundled Python version |
 | Apache Spark via PySpark | 3.4+ | Local dev only | Bundled with Databricks Runtime — `pip install pyspark` only for local unit testing |
 | Databricks CLI | Latest | Local dev | Used for secrets management, workspace interaction, and deploying Databricks Asset Bundles |
 | delta-spark | Match DBR version | Local dev only | Bundled with Databricks Runtime — `pip install delta-spark` only for local unit testing; version must match your DBR's bundled Delta Lake version |
@@ -29,8 +112,14 @@ The architectural rationale for choosing between methods is covered in `ingestio
 Configure your Databricks CLI connection (local machine):
 
 ```bash
-# Authenticate using OAuth (recommended for interactive use)
+# Option 1: OAuth (recommended for interactive use)
 databricks auth login --host https://<your-workspace>.azuredatabricks.net
+
+# Option 2: Personal Access Token (PAT) — common in CI/CD pipelines where
+# OAuth device flows are not available (matches the pattern used in
+# processing_cookbook.md, security_cookbook.md, and performance_cookbook.md)
+databricks configure --token
+# Enter your workspace URL and PAT when prompted.
 
 # Verify authentication
 databricks clusters list
@@ -98,6 +187,8 @@ LIMIT 10;
 - **Checkpoint durability:** The checkpoint directory must be on durable cloud storage. Deleting it causes Auto Loader to reprocess all files from the beginning.
 - **`schemaEvolutionMode` choices:** `addNewColumns` for bronze ingestion where all source columns must be captured. `failOnNewColumns` for silver/gold tables where schema drift should trigger investigation. `rescue` for highly variable sources.
 - **`trigger(availableNow=True)` vs. `trigger(once=True)`:** `availableNow=True` is the modern replacement for the deprecated `once=True`. Use `availableNow=True` for all new pipelines.
+- **Target table creation:** `.toTable("main.bronze.orders")` creates the Delta table automatically on first run if it does not exist, provided the executing principal has `CREATE TABLE` on the target schema. No `CREATE TABLE` DDL is required before the first run.
+- **File discovery mode:** Auto Loader defaults to **directory listing** mode — it polls the storage path on each trigger cycle to find new files. For landing zones with thousands of files or high file-arrival frequency, consider **file notification mode**, which uses cloud storage events (Azure Event Grid / SQS) to detect new files with lower latency and reduced API costs: `.option("cloudFiles.useNotifications", "true")`. File notification mode requires a one-time setup of a storage queue resource. See [Auto Loader file detection modes](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/file-detection-modes) for setup steps.
 
 #### See Also
 
@@ -118,9 +209,24 @@ CSV files arrive in ADLS Gen2 on a daily schedule and must be loaded into a Delt
 
 Use `COPY INTO` targeting the destination Delta table. COPY INTO reads from the path and skips files it has already loaded.
 
+> **Prerequisite — create the target table first:** Unlike Auto Loader's `.toTable()`, `COPY INTO` requires the target Delta table to already exist. It will raise `TABLE_OR_VIEW_NOT_FOUND` if the table does not exist. Run the `CREATE TABLE IF NOT EXISTS` DDL below before the first load.
+
 ##### Python
 
 ```python
+# Step 1: Create the target table before the first load (run once)
+spark.sql("""
+    CREATE TABLE IF NOT EXISTS main.bronze.sales_transactions (
+        transaction_id STRING,
+        sale_date      DATE,
+        amount         DOUBLE,
+        product_id     STRING,
+        customer_id    STRING
+    )
+    USING DELTA
+""")
+
+# Step 2: Load files idempotently
 spark.sql("""
     COPY INTO main.bronze.sales_transactions
     FROM 'abfss://raw@mystorageaccount.dfs.core.windows.net/sales/2026/03/'
@@ -162,6 +268,7 @@ FROM main.bronze.sales_transactions;
 
 - **COPY INTO vs. Auto Loader:** COPY INTO is simpler — no streaming context, no checkpoint directory, pure SQL — but does not support schema evolution. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
+- **`inferSchema = 'true'` for bronze CSV:** Schema inference is acceptable at the bronze layer when column types are not known in advance. For reference tables or any table with fixed, known column types, always define the DDL explicitly and set `inferSchema = 'false'`. See the Reference Data section for an example with explicit DDL.
 
 #### See Also
 
@@ -239,7 +346,8 @@ FROM main.bronze.partner_orders;
 
 - **Public preview:** As of March 2026, this connector is in public preview ([docs](https://learn.microsoft.com/en-us/azure/databricks/ingestion/sftp)). Test in non-production before using in critical pipelines.
 - **GA alternative:** Download files from SFTP to ADLS using `paramiko`, then process from cloud storage with Auto Loader or COPY INTO — this two-stage approach is fully GA.
-- **Partial files:** SFTP sources do not provide atomic delivery guarantees. Use a `.done` sentinel file convention to avoid reading partial files.
+- **Batch mode re-run safety:** The batch `spark.read.format("sftp")` path has no built-in file tracking. If the job fails and is retried, or is triggered manually, it re-reads all SFTP files and appends them again, creating duplicate rows. For production workloads, prefer the incremental (streaming) path shown above — the checkpoint tracks processed files. If batch is required, add a post-load deduplication step using `MERGE` with `ROW_NUMBER()` to keep only the latest record per key.
+- **Partial files:** SFTP sources do not provide atomic delivery guarantees. A common convention is a zero-byte `.done` sentinel file — the pipeline reads only files that have a matching `.done` file present. The native SFTP connector does not implement this filter natively; add a pre-processing task that lists the directory and filters confirmed pairs before the read task.
 
 #### See Also
 
@@ -308,7 +416,9 @@ ORDER BY 1 DESC;
 #### Discussion and Concerns
 
 - **Checkpoint location:** Store checkpoints on durable cloud storage. Deleting the checkpoint causes the stream to restart from the beginning of the Event Hub retention window.
-- **Azure Event Hubs connector:** Install `com.microsoft.azure:azure-eventhubs-spark` as a Maven library on the cluster.
+- **Azure Event Hubs connector:** Install `com.microsoft.azure:azure-eventhubs-spark_2.12:<version>` as a Maven library via the cluster Libraries tab (Compute → your cluster → Libraries → Install New → Maven). Match the version to your Databricks Runtime's Scala version and check [azure-eventhubs-spark releases](https://github.com/Azure/azure-event-hubs-spark/releases) for the latest compatible version.
+- **`sc._jvm` and the encryption call:** `sc` is the `SparkContext`, automatically available in Databricks notebooks. The `sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(...)` call is a Py4J bridge into the Java library — it is required because the Event Hubs connector expects the connection string in encrypted form. This call is only available in Databricks notebook and job cluster environments where the Event Hubs library is installed.
+- **Stream lifecycle — Job vs. notebook:** `trigger(processingTime="1 minute")` starts a continuous stream that never terminates. In a **Databricks Job**, a task must terminate for the job to complete — a non-terminating stream will block the job indefinitely. Use `trigger(availableNow=True)` for job-friendly execution: it processes all available data and then terminates. Use `trigger(processingTime="1 minute")` only in a long-running notebook or in a Databricks Workflows **Continuous Job** type. To stop a running stream gracefully from a notebook: `query = stream.start(); query.awaitTermination(); query.stop()`.
 
 #### See Also
 
@@ -317,9 +427,13 @@ ORDER BY 1 DESC;
 
 ---
 
-### Streaming Ingestion — Delta Live Tables (DLT)
+### Pipeline Ingestion — Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT)
 
-Delta Live Tables is Databricks' declarative pipeline framework. DLT manages compute, retries, checkpointing, and data quality enforcement.
+> **Naming note:** Databricks has renamed Delta Live Tables (DLT) to **Lakeflow Spark Declarative Pipelines (SDP)**. The underlying feature is identical — all DLT notebook code, `@dlt.table` decorators, SQL `CREATE OR REFRESH STREAMING TABLE` syntax, and `dlt.*` Python functions are unchanged. This cookbook uses the new name going forward.
+>
+> **Note:** SDP supports both **triggered** (runs once and terminates — batch-like) and **continuous** (runs indefinitely — streaming) execution modes. It is not limited to streaming sources.
+
+Lakeflow Spark Declarative Pipelines is Databricks' declarative pipeline framework. It manages compute, retries, checkpointing, and data quality enforcement.
 
 #### Problem
 
@@ -327,7 +441,7 @@ A medallion pipeline (bronze → silver → gold) must be built for order data w
 
 #### Solution
 
-Define pipeline tables using `@dlt.table` decorators and `@dlt.expect` annotations. Deploy as a DLT pipeline via the Databricks UI, CLI, or Databricks Asset Bundles.
+Define pipeline tables using `@dlt.table` decorators and `@dlt.expect` annotations. Deploy as an SDP pipeline via the Databricks UI, CLI, or Databricks Asset Bundles.
 
 ##### Python
 
@@ -409,13 +523,17 @@ FROM STREAM(LIVE.orders_bronze);
 
 #### Discussion and Concerns
 
-- **DLT incurs a DBU premium:** Evaluate whether a standard Structured Streaming job achieves the same outcome at lower cost for cost-sensitive workloads.
+- **DBU premium:** Evaluate whether a standard Structured Streaming job achieves the same outcome at lower cost for cost-sensitive workloads.
 - **Pipeline mode:** Triggered mode (default) runs once and terminates. Continuous mode runs indefinitely. Triggered mode is appropriate and cheaper for batch-oriented bronze ingestion.
+- **Deploying a pipeline:** Create via the Databricks UI (Lakeflow Spark Declarative Pipelines → Create pipeline → specify the source notebook or file), via the CLI (`databricks pipelines create --json '{"name":"orders","libraries":[{"notebook":{"path":"/path/to/pipeline_notebook"}}]}'`), or via Databricks Asset Bundles with a `pipelines:` block in `databricks.yml`. See [Create a pipeline](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/configure-pipeline) for the full UI and YAML reference.
+- **Managed table lifecycle:** Tables created inside an SDP pipeline are **managed by the pipeline**. If the pipeline is deleted, the managed tables and their data are also deleted. If you need the tables to survive pipeline deletion, use the `CREATE OR REPLACE LIVE TABLE` path with an external storage location, or write to an external Delta table outside SDP.
+- **One pipeline per managed table:** An SDP-managed table can only be written to by the pipeline that created it. Multiple SDP pipelines cannot write to the same managed table. To share data between pipelines, materialise to an external (non-SDP-managed) Delta table that both pipelines can read from.
+- **`spark.readStream` vs. `dlt.read_stream()` — why both are used:** The bronze table function uses `spark.readStream.format("cloudFiles")` because cloud storage is an **external** source — not an SDP-managed table. `dlt.read_stream()` is for reading from tables that SDP manages (tables defined with `@dlt.table` or `CREATE OR REFRESH STREAMING TABLE`). The silver function correctly uses `dlt.read_stream("orders_bronze")` because it reads from the SDP-managed bronze table. Using `spark.table("orders_bronze")` for an SDP-managed table would bypass incremental processing; using `dlt.read_stream()` for a cloud storage path would raise a resolution error.
 
 #### See Also
 
-- [Delta Live Tables — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/)
-- [DLT expectations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations)
+- [Lakeflow Spark Declarative Pipelines — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/)
+- [Pipeline expectations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations)
 
 ---
 
@@ -436,9 +554,36 @@ Use `spark.read.format("jdbc")` with partition configuration. Write to Delta usi
 ##### Python
 
 ```python
+from pyspark.sql.functions import max as spark_max
+from delta.tables import DeltaTable
+
 jdbc_url = "jdbc:sqlserver://myserver.database.windows.net:1433;database=SourceDB"
 jdbc_user = dbutils.secrets.get(scope="jdbc-secrets", key="sql-user")
 jdbc_password = dbutils.secrets.get(scope="jdbc-secrets", key="sql-password")
+
+# Determine partition bounds from the source table to avoid skewed partitions.
+# lowerBound and upperBound control partition generation, not row filtering —
+# all rows matching the WHERE clause are read regardless of these values.
+bounds_df = (
+    spark.read.format("jdbc")
+    .option("url", jdbc_url)
+    .option("user", jdbc_user)
+    .option("password", jdbc_password)
+    .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
+    .option("query", "SELECT MIN(order_id) AS lo, MAX(order_id) AS hi FROM dbo.orders")
+    .load()
+    .collect()[0]
+)
+lower_bound = str(bounds_df["lo"])
+upper_bound = str(bounds_df["hi"])
+
+# Retrieve the last loaded watermark from the target table.
+# On the first run, the table is empty and last_ts is None — the fallback triggers a full load.
+try:
+    last_ts = spark.table("main.bronze.orders").select(spark_max("updated_at")).collect()[0][0]
+    watermark = last_ts.strftime("%Y-%m-%d %H:%M:%S") if last_ts else "1900-01-01 00:00:00"
+except Exception:
+    watermark = "1900-01-01 00:00:00"
 
 df = (
     spark.read.format("jdbc")
@@ -446,15 +591,14 @@ df = (
     .option("user", jdbc_user)
     .option("password", jdbc_password)
     .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
-    .option("query", "SELECT * FROM dbo.orders WHERE updated_at >= '2026-03-12 00:00:00'")
+    .option("query", f"SELECT * FROM dbo.orders WHERE updated_at >= '{watermark}'")
     .option("partitionColumn", "order_id")
-    .option("lowerBound", "1")
-    .option("upperBound", "10000000")
+    .option("lowerBound", lower_bound)
+    .option("upperBound", upper_bound)
     .option("numPartitions", "8")
     .load()
 )
 
-from delta.tables import DeltaTable
 target = DeltaTable.forName(spark, "main.bronze.orders")
 (
     target.alias("t")
@@ -468,6 +612,16 @@ target = DeltaTable.forName(spark, "main.bronze.orders")
 ##### SQL
 
 ```sql
+-- Create the target table before the first JDBC load.
+-- DeltaTable.forName() in the Python MERGE will raise AnalysisException if the table does not exist.
+CREATE TABLE IF NOT EXISTS main.bronze.orders (
+    order_id     BIGINT,
+    customer_id  STRING,
+    order_total  DOUBLE,
+    updated_at   TIMESTAMP
+)
+USING DELTA;
+
 -- SQL cannot pass runtime credentials to JDBC options directly.
 -- Use Python above to load data; validate with SQL:
 
@@ -486,6 +640,9 @@ LIMIT 20;
 #### Discussion and Concerns
 
 - **Parallel reads increase source load:** 8 partitions = 8 concurrent connections. Use a read replica where available.
+- **Partition bounds:** `lowerBound` and `upperBound` define how Spark splits the read into `numPartitions` parallel range queries — they do not filter rows. Setting them to values far outside the actual data range produces heavily skewed partitions. The example above queries the actual `MIN`/`MAX` before each load to keep partitions balanced.
+- **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load.
+- **`query` and `partitionColumn` interaction:** When `query` is specified alongside `partitionColumn`, Spark wraps the query as a subquery for each partition: `SELECT * FROM (<your query>) WHERE order_id BETWEEN <lower> AND <upper>`. SQL Server handles this correctly. If your JDBC driver does not support subquery wrapping, use `.option("dbtable", "dbo.orders")` with a database view that applies the filter.
 - **Hard deletes are invisible:** Incremental JDBC based on `updated_at` will not detect deleted rows. Use a CDC tool (Debezium) if delete propagation is required.
 - **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL/MySQL, install the driver JAR via the cluster Libraries tab.
 
@@ -509,6 +666,12 @@ The data platform must ingest data from Salesforce without building or maintaini
 #### Solution
 
 Create a Lakeflow Connect pipeline for Salesforce. The connector handles incremental extraction, schema evolution, and scheduling natively.
+
+> **Before running the code below:** Create the pipeline and configure credentials first. The code below grants permissions to the pipeline's service principal and validates the landed data — it assumes the pipeline already exists.
+>
+> **UI:** Databricks UI → Ingestion → Create pipeline → select Salesforce → enter your Salesforce OAuth credentials (connected app client ID, client secret, instance URL, and environment type) → select the objects to replicate → configure the destination catalog and schema → set the sync frequency.
+>
+> **Asset Bundles:** Define the pipeline in `databricks.yml` under `ingestion_pipelines:` and deploy with `databricks bundle deploy`. See [Lakeflow Connect Asset Bundles](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the YAML schema and credential configuration reference.
 
 ##### Python (Databricks Asset Bundles setup)
 
@@ -612,6 +775,7 @@ LIMIT 50;
 
 #### Discussion and Concerns
 
+- **Provisioning via Partner Connect:** Databricks UI → Data → Partner Connect → search for Fivetran or Airbyte → Connect → follow the wizard (it provisions a service principal, SQL warehouse connection, and destination schema automatically) → complete source configuration in the partner tool's UI (enter source credentials, select tables, set sync frequency). The service principal name shown in the Partner Connect confirmation screen is the principal to grant Unity Catalog privileges (as in the Python code above).
 - **Data transits third-party infrastructure:** Assess against GDPR, HIPAA, and data residency requirements. Obtain a Data Processing Agreement (DPA) for regulated data.
 - **Isolate connector schemas:** Grant the connector principal access only to its dedicated schema.
 - **`_fivetran_deleted = true` records are retained:** Downstream silver transformations must filter `WHERE _fivetran_deleted = false`.
@@ -676,11 +840,11 @@ CREATE TABLE IF NOT EXISTS main.silver.ref_country_codes (
 USING DELTA
 COMMENT 'ISO 3166 country code reference. Source: abfss://reference/country_codes/';
 
--- Load idempotently
+-- Load idempotently (inferSchema = 'false' — column types are defined in the DDL above)
 COPY INTO main.silver.ref_country_codes
 FROM 'abfss://reference@mystorageaccount.dfs.core.windows.net/country_codes/'
 FILEFORMAT = CSV
-FORMAT_OPTIONS ('header' = 'true')
+FORMAT_OPTIONS ('header' = 'true', 'inferSchema' = 'false')
 COPY_OPTIONS ('force' = 'false');
 
 -- Validate: check for unexpected region values
@@ -711,7 +875,7 @@ DESCRIBE HISTORY main.silver.ref_country_codes;
 
 ## Data Vault Staging — Native PySpark and SQL
 
-On the native Databricks stack, Data Vault 2.0 staging (hash key and hashdiff derivation) is implemented directly using PySpark functions or Spark SQL, deployed as a Delta Live Tables pipeline or a standalone PySpark job. No external macro library (AutomateDV) is required.
+On the native Databricks stack, Data Vault 2.0 staging (hash key and hashdiff derivation) is implemented directly using PySpark functions or Spark SQL, deployed as an SDP pipeline or a standalone PySpark job. No external macro library (AutomateDV) is required.
 
 ### Problem
 
@@ -719,7 +883,7 @@ A raw source table `main.bronze.raw_orders` must be prepared for vault loading. 
 
 ### Solution
 
-#### Python (DLT View)
+#### Python (SDP View)
 
 ```python
 import dlt
@@ -763,7 +927,7 @@ def stg_orders():
     )
 ```
 
-#### SQL (DLT View)
+#### SQL (SDP View)
 
 ```sql
 -- DLT view — non-materialised staging layer
@@ -804,7 +968,7 @@ SELECT
 FROM STREAM(LIVE.raw_orders);
 ```
 
-#### Standalone PySpark (non-DLT)
+#### Standalone PySpark (non-SDP)
 
 ```python
 from pyspark.sql.functions import md5, concat_ws, coalesce, lit, col, current_date
@@ -865,7 +1029,7 @@ LIMIT 5;
 - **Hash algorithm choice:** Use `MD5()` for most cases (32-character hex, computationally inexpensive). Use `SHA2(expr, 256)` for 64-character hex if your organisation has a policy against MD5. The choice must be made at platform design time — changing after vault tables are populated requires a full reprocessing of the vault.
 - **Column ordering is permanent:** The column order in `CONCAT_WS` expressions in the hash key and hashdiff definitions must never change after the first production load. Document the column order per entity in the data dictionary.
 - **Hashdiff scope must match satellite scope:** Every column that will be loaded into a satellite must be included in its hashdiff. Adding a column later changes every existing hashdiff value, causing all existing satellite records to re-evaluate as changed on the next load.
-- **DLT view vs. materialised table:** Implement staging as a DLT view (not a streaming table) — staging is a transformation step, not a storage layer. Views avoid unnecessary data duplication and maintain a clean lineage graph.
+- **SDP view vs. materialised table:** Implement staging as an SDP view (not a streaming table) — staging is a transformation step, not a storage layer. Views avoid unnecessary data duplication and maintain a clean lineage graph.
 - **SHA2 syntax:** In Spark SQL, `SHA2(expr, 256)` returns a hex string. In PySpark, use `sha2(col, 256)` from `pyspark.sql.functions`. Both produce the same output as `SHA2(CAST(expr AS STRING), 256)` for string inputs.
 
 ### See Also
@@ -873,7 +1037,7 @@ LIMIT 5;
 - [MD5 function — Databricks SQL](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/md5)
 - [SHA2 function — Databricks SQL](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/sha2)
 - [CONCAT_WS function — Databricks SQL](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/concat_ws)
-- [Delta Live Tables Python API — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/python-ref)
+- [Lakeflow Spark Declarative Pipelines Python API — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/python-ref)
 - `../data_vault/dv2_staging_cookbook.md` — Hub, link, and satellite loading using the staged data
 - `ingestion_patterns.md` — Raw Staging for Data Vault 2.0 (design considerations)
 - [Delta Lake schema evolution — Delta Lake](https://docs.delta.io/latest/delta-schema-evolution.html)
@@ -888,7 +1052,7 @@ LIMIT 5;
 |--------|-------------|-----------------|
 | Auto Loader / Structured Streaming | `spark.streams.active`; Databricks Jobs run history | Streams stopped without error; checkpoint files not advancing |
 | COPY INTO load history | `DESCRIBE HISTORY main.bronze.my_table` | Operations where `operation = 'COPY INTO'`; `numAddedFiles` is non-zero on expected run days |
-| DLT pipeline health | Databricks UI → Delta Live Tables; `system.lakeflow.*` system tables | Expectation failure rates; pipelines terminating in `FAILED` state |
+| SDP pipeline health | Databricks UI → Lakeflow Spark Declarative Pipelines; `system.lakeflow.*` system tables | Expectation failure rates; pipelines terminating in `FAILED` state |
 | Lakeflow Connect | Databricks UI → Ingestion → Lakeflow pipelines | Pipelines not run within expected window; connector errors in event log |
 | JDBC job duration | Databricks Jobs run history | Durations trending upward — may indicate source table growth requiring `numPartitions` adjustment |
 | Reference data freshness | `DESCRIBE HISTORY main.silver.ref_country_codes` | Last `COPY INTO` operation timestamp vs. expected update cadence |
@@ -902,5 +1066,5 @@ LIMIT 5;
 | JDBC job significantly slower | Source table growth; insufficient `numPartitions`; index fragmentation | Increase `numPartitions`; request source DBA to rebuild indexes; use read replica |
 | Lakeflow Connect authentication error | OAuth token expired or credentials rotated | Update connection credentials in Lakeflow Connect configuration |
 | Partner connector lands duplicate rows | Connector backfill triggered (e.g., after reconnection) | Deduplicate in silver using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY _fivetran_synced DESC)` |
-| DLT pipeline fails after source schema change | New column not matching a quality constraint | Review constraint; update expectation to handle the new column |
+| SDP pipeline fails after source schema change | New column not matching a quality constraint | Review constraint; update expectation to handle the new column |
 | Staging hash key mismatch (Data Vault) | Column ordering changed in `CONCAT_WS` expression | Restore original column order; audit which vault records have corrupted hash values; if significant, reprocess from bronze |
