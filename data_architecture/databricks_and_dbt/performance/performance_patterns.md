@@ -93,7 +93,7 @@ The distinction is not merely a UI preference — the two surfaces have differen
 **Use a Spark Cluster when:**
 
 - Running ETL jobs written in PySpark, Scala, or Java
-- Running streaming pipelines (Structured Streaming or Delta Live Tables)
+- Running streaming pipelines (Structured Streaming or Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT))
 - Executing machine learning training or inference workloads
 - Running dbt Python models (which require a Spark cluster, not a SQL Warehouse)
 - Running notebooks interactively with PySpark code

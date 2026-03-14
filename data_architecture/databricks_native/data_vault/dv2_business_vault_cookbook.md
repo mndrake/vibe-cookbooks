@@ -238,11 +238,11 @@ WHERE EMAIL_DOMAIN IS NOT NULL
 - **Never modify Raw Vault tables for business rules:** If a business rule is applied by updating or inserting into a satellite or hub, the audit trail is corrupted. Business rules live exclusively in Business Vault models that SELECT from Raw Vault.
 - **Materialise as a Delta table, not a view:** Business vault models that are queried by PIT or Bridge refresh jobs should be materialised as Delta tables for performance. Live views that reach back into raw vault satellites over large histories are expensive.
 - **Document each rule:** Each computed column should include an inline SQL comment explaining the business logic. Rules change — without documentation, future engineers cannot safely modify them.
-- **Full-refresh vs. incremental:** If the derived model reads from the full satellite history to compute a current-state snapshot (like `bv_customer_derived` above), it must be a full `CREATE OR REPLACE TABLE`. If it derives attributes row-by-row from a satellite without look-back, it can be built as an append-only DLT streaming table.
+- **Full-refresh vs. incremental:** If the derived model reads from the full satellite history to compute a current-state snapshot (like `bv_customer_derived` above), it must be a full `CREATE OR REPLACE TABLE`. If it derives attributes row-by-row from a satellite without look-back, it can be built as an append-only SDP streaming table.
 
 ### See Also
 
-- [Delta Live Tables Python API](https://docs.databricks.com/en/delta-live-tables/python-ref.html)
+- [Lakeflow Spark Declarative Pipelines Python API](https://docs.databricks.com/en/delta-live-tables/python-ref.html)
 - [dv2_raw_vault_cookbook.md — Satellite Loading](./dv2_raw_vault_cookbook.md)
 - [dv2_architecture.md — Business Vault](./dv2_architecture.md)
 
@@ -416,7 +416,7 @@ def build_pit_customer(spark, snapshot_date: date = None):
     print(f"pit_customer refreshed — {result.count()} rows")
 ```
 
-**Functional difference between SQL and Python approaches:** The SQL `CREATE OR REPLACE TABLE` is suitable for full-history PIT rebuilds scheduled as a Databricks Workflows SQL task. The Python function is more flexible: it supports incremental single-day refresh (pass `snapshot_date`) and can be embedded in a DLT pipeline. For large customer bases, the incremental Python approach is significantly faster.
+**Functional difference between SQL and Python approaches:** The SQL `CREATE OR REPLACE TABLE` is suitable for full-history PIT rebuilds scheduled as a Databricks Workflows SQL task. The Python function is more flexible: it supports incremental single-day refresh (pass `snapshot_date`) and can be embedded in an SDP pipeline. For large customer bases, the incremental Python approach is significantly faster.
 
 #### Validation — SQL
 
@@ -467,7 +467,7 @@ Building a fact table that reports on customer orders requires joining `hub_cust
 
 ### Solution
 
-Build a Bridge table natively by joining Hub and Link structures in a `CREATE OR REPLACE TABLE AS SELECT` statement (or a DLT Python table). The Bridge pre-computes the join path so mart models retrieve all relevant hash keys from a single bridge join rather than a multi-hop vault traversal.
+Build a Bridge table natively by joining Hub and Link structures in a `CREATE OR REPLACE TABLE AS SELECT` statement (or an SDP Python table). The Bridge pre-computes the join path so mart models retrieve all relevant hash keys from a single bridge join rather than a multi-hop vault traversal.
 
 #### SQL Example — Bridge spanning CUSTOMER → CUSTOMER_ORDER LINK → ORDER
 
@@ -520,7 +520,7 @@ SELECT
 FROM bridge_raw;
 ```
 
-#### Python Example — DLT table for Bridge
+#### Python Example — SDP table for Bridge
 
 ```python
 # DLT Python bridge table — declare in a DLT pipeline notebook.
@@ -610,7 +610,7 @@ def build_bridge_customer_order_product(spark):
     )
 ```
 
-**Functional difference between SQL and Python approaches:** The SQL `CREATE OR REPLACE TABLE` is a full-history rebuild on every run. The Python DLT approach declares the bridge as a live table that DLT manages incrementally. For large link tables, the Python incremental approach (appending only today's new snapshot rows) avoids a full rebuild.
+**Functional difference between SQL and Python approaches:** The SQL `CREATE OR REPLACE TABLE` is a full-history rebuild on every run. The Python SDP approach declares the bridge as a live table that SDP manages incrementally. For large link tables, the Python incremental approach (appending only today's new snapshot rows) avoids a full rebuild.
 
 #### Validation — SQL
 
@@ -653,7 +653,7 @@ WHERE b.CUSTOMER_ORDER_HK IS NULL;
 
 ## Native Data Quality Checks for Business Vault
 
-The native equivalent of dbt-utils test suites is Databricks SQL assertions, DLT `@dlt.expect_all_or_drop` constraints, and Databricks Lakehouse Monitoring.
+The native equivalent of dbt-utils test suites is Databricks SQL assertions, SDP `@dlt.expect_all_or_drop` constraints, and Databricks Lakehouse Monitoring.
 
 ### Problem
 
@@ -661,7 +661,7 @@ The business vault applies derived business rules and pre-computed join paths. I
 
 ### Solution
 
-Implement data quality checks using DLT expectations (for real-time pipeline enforcement) or Databricks SQL assertions (for Workflows pipeline gates).
+Implement data quality checks using SDP expectations (for real-time pipeline enforcement) or Databricks SQL assertions (for Workflows pipeline gates).
 
 #### SQL Example — Assertion queries as pipeline gate
 
@@ -738,7 +738,7 @@ if failed:
 print("All business vault data quality assertions passed.")
 ```
 
-#### Python Example — DLT expectations in the pipeline
+#### Python Example — SDP expectations in the pipeline
 
 ```python
 # DLT expectations enforce data quality at pipeline execution time.
@@ -761,7 +761,7 @@ def bv_customer_derived_validated():
     return dlt.read("bv_customer_derived")
 ```
 
-**Functional difference between SQL assertions and DLT expectations:** SQL assertion queries in a Workflows pipeline gate run after the business vault tables are fully built and block downstream tasks. DLT expectations enforce constraints row-by-row at pipeline execution time — `expect_or_drop` removes violating rows silently (and logs them), while `expect_or_fail` halts the pipeline. Use SQL assertions for end-of-stage gates; use DLT expectations for row-level quality enforcement during loading.
+**Functional difference between SQL assertions and SDP expectations:** SQL assertion queries in a Workflows pipeline gate run after the business vault tables are fully built and block downstream tasks. SDP expectations enforce constraints row-by-row at pipeline execution time — `expect_or_drop` removes violating rows silently (and logs them), while `expect_or_fail` halts the pipeline. Use SQL assertions for end-of-stage gates; use SDP expectations for row-level quality enforcement during loading.
 
 #### Validation — SQL
 
@@ -786,12 +786,12 @@ GROUP BY expectation_name;
 ### Discussion and Concerns
 
 - **`expect_or_fail` vs. `expect_or_drop` vs. SQL assertion:** `expect_or_fail` halts the pipeline and prevents any bad data from being written — use this for critical grain constraints. `expect_or_drop` silently removes bad rows and logs them — use this for advisory quality checks. SQL assertions in Workflows are the simplest option for post-load gates that block downstream tasks.
-- **Run quality checks before mart refresh:** The Workflows job task order should be: (1) raw vault DLT pipeline, (2) business vault DLT pipeline or SQL tasks, (3) data quality assertion task, (4) mart refresh tasks. Configure task dependencies to enforce this ordering.
-- **Monitor expectation violation counts over time:** Use Databricks Lakehouse Monitoring or a custom dashboard on the DLT event log to track violation trends. A sudden spike in `expect_or_drop` failures may indicate a source system data quality issue.
+- **Run quality checks before mart refresh:** The Workflows job task order should be: (1) raw vault SDP pipeline, (2) business vault SDP pipeline or SQL tasks, (3) data quality assertion task, (4) mart refresh tasks. Configure task dependencies to enforce this ordering.
+- **Monitor expectation violation counts over time:** Use Databricks Lakehouse Monitoring or a custom dashboard on the SDP event log to track violation trends. A sudden spike in `expect_or_drop` failures may indicate a source system data quality issue.
 
 ### See Also
 
-- [Delta Live Tables data quality expectations](https://docs.databricks.com/en/delta-live-tables/expectations.html)
+- [Lakeflow Spark Declarative Pipelines data quality expectations](https://docs.databricks.com/en/delta-live-tables/expectations.html)
 - [Databricks Lakehouse Monitoring](https://docs.databricks.com/en/lakehouse-monitoring/index.html)
 - [Databricks Workflows task dependencies](https://learn.microsoft.com/en-us/azure/databricks/jobs/)
 
@@ -806,13 +806,13 @@ GROUP BY expectation_name;
 | PIT table row count | `SELECT COUNT(*) FROM main.business_vault.pit_customer` in scheduled query | Row count should grow by (new customers × days in schedule window) per run |
 | Bridge table staleness | `SELECT MAX(AS_OF_DATE) FROM main.business_vault.bridge_customer_orders` | Should match current date after nightly refresh |
 | Data quality gate result | Databricks Workflows job run status — assertion task exit code | Any assertion failure must trigger an alert and block mart refresh |
-| DLT expectation violation counts | DLT Event Log / Databricks Lakehouse Monitoring | Target: 0 `expect_or_fail` violations; `expect_or_drop` violations reviewed weekly |
+| SDP expectation violation counts | SDP Event Log / Databricks Lakehouse Monitoring | Target: 0 `expect_or_fail` violations; `expect_or_drop` violations reviewed weekly |
 | Business vault refresh duration | Databricks Workflows UI / job run history | PIT and bridge refreshes grow over time — monitor for unexpected slowdowns |
 
 ### Metrics for Success
 
 - [ ] PIT table is refreshed within the scheduled SLA (e.g., within 30 minutes of raw vault refresh completing)
 - [ ] All data quality assertions pass on every pipeline run — zero failures
-- [ ] DLT `expect_or_drop` violations are reviewed in the weekly data quality review
+- [ ] SDP `expect_or_drop` violations are reviewed in the weekly data quality review
 - [ ] Bridge tables are refreshed on the same schedule as PIT tables — never stale relative to PIT
 - [ ] No business vault model directly reads from `staging` schema — all reads are from `raw_vault` only

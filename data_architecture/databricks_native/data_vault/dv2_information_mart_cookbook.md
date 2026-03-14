@@ -28,7 +28,7 @@ All patterns in this cookbook use:
 
 ### Installing Your Development Environment
 
-> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and Lakeflow Spark Declarative Pipelines (SDP) are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
 >
 > **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
 
@@ -37,7 +37,7 @@ All patterns in this cookbook use:
 | Python | 3.10+ | Local dev | Required for the Databricks CLI |
 | [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | 0.200+ | Local dev | Bundle deployment and workspace interaction |
 | `delta-spark` | Bundled with Databricks Runtime | Databricks (bundled) | Pre-installed; no separate install needed on a cluster |
-| Delta Live Tables runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
+| Lakeflow Spark Declarative Pipelines (SDP) runtime | Current channel | Databricks (bundled) | Provided by Databricks — no installation needed |
 
 ### Getting a New Starter Project
 
@@ -860,7 +860,7 @@ def build_date_spine(spark: SparkSession, start: str = "2015-01-01") -> None:
     print(f"dim_date refreshed — {dim_date.count()} rows")
 ```
 
-**Functional difference between SQL and Python:** `SEQUENCE + EXPLODE` in a Spark SQL task runs on a SQL Warehouse and is the direct native equivalent of `dbt_utils.date_spine`. The PySpark function is more flexible — it can be embedded in DLT pipelines or Workflows Python tasks and accepts parameterised start/end dates. Both generate identical output. Prefer the SQL approach for standalone date dimension refreshes scheduled as Workflows SQL tasks; use the Python approach when the date spine is one step in a larger PySpark pipeline.
+**Functional difference between SQL and Python:** `SEQUENCE + EXPLODE` in a Spark SQL task runs on a SQL Warehouse and is the direct native equivalent of `dbt_utils.date_spine`. The PySpark function is more flexible — it can be embedded in SDP pipelines or Workflows Python tasks and accepts parameterised start/end dates. Both generate identical output. Prefer the SQL approach for standalone date dimension refreshes scheduled as Workflows SQL tasks; use the Python approach when the date spine is one step in a larger PySpark pipeline.
 
 #### Validation — SQL
 

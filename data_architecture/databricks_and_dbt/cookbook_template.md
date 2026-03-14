@@ -166,7 +166,7 @@ The following Databricks and cloud infrastructure is required to run the example
 
 ### Monitoring Your Environment in Production
 
-[Describe how to observe this pattern in a running production environment. Include relevant Databricks monitoring surfaces: job run history, pipeline event logs, DLT pipeline UI, Spark UI, query history in SQL Warehouse, or Unity Catalog audit logs.]
+[Describe how to observe this pattern in a running production environment. Include relevant Databricks monitoring surfaces: job run history, pipeline event logs, SDP pipeline UI, Spark UI, query history in SQL Warehouse, or Unity Catalog audit logs.]
 
 | Signal | Where to Find It | What to Watch For |
 |--------|-----------------|-------------------|

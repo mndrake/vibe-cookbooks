@@ -345,9 +345,9 @@ ORDER BY 1 DESC;
 
 ---
 
-### Streaming Ingestion — Delta Live Tables (DLT)
+### Streaming Ingestion — Lakeflow Spark Declarative Pipelines (SDP)
 
-Delta Live Tables is Databricks' declarative pipeline framework. You declare the transformations; DLT manages compute, retries, checkpointing, and data quality enforcement.
+Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT) is Databricks' declarative pipeline framework. You declare the transformations; SDP manages compute, retries, checkpointing, and data quality enforcement.
 
 #### Problem
 
@@ -355,7 +355,7 @@ A medallion pipeline (bronze → silver → gold) must be built for customer ord
 
 #### Solution
 
-Define pipeline tables using `@dlt.table` decorators and `@dlt.expect` annotations for data quality. Deploy as a DLT pipeline (triggered or continuous) via the Databricks UI, CLI, or Databricks Asset Bundles.
+Define pipeline tables using `@dlt.table` decorators and `@dlt.expect` annotations for data quality. Deploy as an SDP pipeline (triggered or continuous) via the Databricks UI, CLI, or Databricks Asset Bundles.
 
 ##### Python
 
@@ -440,14 +440,14 @@ FROM STREAM(LIVE.orders_bronze);
 
 #### Discussion and Concerns
 
-- **DLT incurs a DBU premium:** DLT pipelines run on DLT-managed clusters with a higher DBU multiplier than standard job clusters. For cost-sensitive workloads, evaluate whether a standard Structured Streaming job achieves the same outcome at lower cost.
+- **SDP incurs a DBU premium:** SDP pipelines run on SDP-managed clusters with a higher DBU multiplier than standard job clusters. For cost-sensitive workloads, evaluate whether a standard Structured Streaming job achieves the same outcome at lower cost.
 - **Pipeline mode:** Triggered mode (the default) runs the pipeline once and terminates. Continuous mode runs indefinitely with low-latency processing. For most batch-oriented bronze ingestion, triggered mode is appropriate and significantly cheaper.
-- **Data quality metrics:** DLT records expectation pass/fail counts in the pipeline event log (`system.lakeflow.*` tables). These are invaluable for monitoring data quality trends over time.
+- **Data quality metrics:** SDP records expectation pass/fail counts in the pipeline event log (`system.lakeflow.*` tables). These are invaluable for monitoring data quality trends over time.
 
 #### See Also
 
-- [Delta Live Tables overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/)
-- [DLT expectations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations)
+- [Lakeflow Spark Declarative Pipelines overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/)
+- [SDP expectations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations)
 
 ---
 
@@ -792,7 +792,7 @@ SELECT COUNT(*) AS total_rows FROM main.bronze.orders_historical_backfill;
 #### Discussion and Concerns
 
 - **No deduplication or state tracking:** The Notebook Pattern has no mechanism to prevent duplicate loads if run more than once. Running the same notebook twice on the same source data will produce duplicate rows unless the write is `overwrite` mode.
-- **Not for production scheduling:** Never schedule a notebook as a recurring Databricks Job as a substitute for a proper ingestion pipeline. Use Auto Loader, COPY INTO, or DLT for recurring loads.
+- **Not for production scheduling:** Never schedule a notebook as a recurring Databricks Job as a substitute for a proper ingestion pipeline. Use Auto Loader, COPY INTO, or SDP for recurring loads.
 - **Auditability:** Record the backfill in the notebook's markdown cells or a dedicated run log table: who ran it, when, what source path, how many rows, and why. This is the only audit trail available for manual notebook runs.
 
 #### See Also
@@ -1028,7 +1028,7 @@ Use the following signals to observe ingestion pipelines in a running production
 |--------|-------------|-----------------|
 | Auto Loader / Structured Streaming checkpoint health | `spark.streams.active` in a notebook; Databricks Jobs run history | Streams that have stopped without an error logged; checkpoint files that are not advancing |
 | COPY INTO load history | `DESCRIBE HISTORY main.bronze.my_table` | Rows where `operation = 'COPY INTO'`; verify `operationMetrics.numAddedFiles` is non-zero on expected run days |
-| DLT pipeline health | Databricks UI → Delta Live Tables → pipeline event log; `system.lakeflow.*` system tables | Expectation failure rates exceeding thresholds; pipeline runs that terminate in `FAILED` state |
+| SDP pipeline health | Databricks UI → Lakeflow Spark Declarative Pipelines → pipeline event log; `system.lakeflow.*` system tables | Expectation failure rates exceeding thresholds; pipeline runs that terminate in `FAILED` state |
 | Lakeflow Connect pipeline status | Databricks UI → Ingestion → Lakeflow pipelines; Lakeflow Jobs run history | Pipelines that have not run within the expected schedule window; connector errors in event logs |
 | JDBC job run duration | Databricks Jobs run history; job cluster metrics | Run durations trending upward (may indicate source table growth requiring `numPartitions` adjustment or index maintenance on the source) |
 | Data freshness | Query `MAX(ingested_at)` or `MAX(_metadata.file_modification_time)` on bronze tables | Tables where `MAX(ingested_at)` is older than the expected pipeline frequency |
@@ -1042,4 +1042,4 @@ Use the following signals to observe ingestion pipelines in a running production
 | JDBC job runs significantly slower than previous runs | Source table has grown; `numPartitions` insufficient; source index fragmentation | Increase `numPartitions`; request index maintenance from the source DBA; consider reading from a read replica |
 | Lakeflow Connect pipeline fails with authentication error | OAuth token expired or credentials rotated | Update the connection credentials in the Lakeflow Connect connection configuration via the Databricks UI or API |
 | Partner connector lands duplicate rows | Connector backfill triggered (e.g., after reconnection) | Deduplicate using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY _fivetran_synced DESC)` in the downstream silver transformation |
-| DLT pipeline fails immediately after source schema change | New column not matching an `@dlt.expect` constraint | Review the constraint definition; add the new column to the constraint or update the expectation to handle it |
+| SDP pipeline fails immediately after source schema change | New column not matching an `@dlt.expect` constraint | Review the constraint definition; add the new column to the constraint or update the expectation to handle it |
