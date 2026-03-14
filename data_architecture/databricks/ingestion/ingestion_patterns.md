@@ -9,7 +9,7 @@
 
 This document describes the architectural patterns and design decisions that govern data ingestion on Databricks using the native Databricks toolchain. It is a decision and design reference, not a step-by-step implementation guide. Step-by-step examples for each method are found in `ingestion_cookbook.md` in the same directory.
 
-This document is intended for data architects, senior data engineers, and technical leads who are selecting or reviewing ingestion patterns for a Databricks-based data platform. It covers method selection criteria, batch versus streaming trade-offs, schema evolution strategies, and native reference data loading patterns using COPY INTO and Delta Lake.
+This document is intended for data architects, senior data engineers, and technical leads who are selecting or reviewing ingestion patterns for a Databricks-based data platform. It covers method selection criteria, batch versus streaming trade-offs, and schema evolution strategies.
 
 ---
 
@@ -169,37 +169,6 @@ Column renames and removals are breaking changes that no method handles automati
 - [Auto Loader schema evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/schema)
 - [Delta table schema evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema)
 - [Delta Lake schema evolution — Delta Lake](https://docs.delta.io/latest/delta-schema-evolution.html)
-
----
-
-## Reference Data Loading (Native)
-
-### Overview
-
-Reference data — country codes, currency codes, product status mappings, and similar small, static lookup tables — must be managed carefully on the native Databricks stack. The appropriate pattern depends on the size of the dataset, the update frequency, and who is responsible for updates.
-
-### Pattern Selection
-
-| Pattern | When to Use | Mechanism |
-|---------|-------------|-----------|
-| **COPY INTO from cloud storage** | Reference data managed by a technical team; data is stored as CSV or Parquet files in ADLS/S3; idempotent loads required | Store the reference CSV in a controlled ADLS path; use COPY INTO to load idempotently; update by uploading a new version of the file and re-running COPY INTO with `FORCE = TRUE` |
-| **`INSERT OVERWRITE` or `CREATE OR REPLACE TABLE`** | Very small reference tables (< 100 rows); managed directly in a Databricks notebook or SQL script; change history tracked via Delta table history | Write the reference data directly as SQL `VALUES` in a notebook or SQL file; version the SQL script in git |
-| **Auto Loader from cloud storage** | Reference data that changes incrementally over time; new rows added periodically without full reload; standard Auto Loader pipeline with `addNewColumns` schema evolution | Standard Auto Loader pattern; checkpoint tracks which versions of the file have been processed |
-| **Delta table managed via Databricks workflow** | Reference data updated by a business team via a form or API; loaded into Delta by a scheduled Databricks Job that calls an API or reads from a shared location | Schedule a Databricks Job to read from the shared source and MERGE into the Delta reference table |
-
-### Trade-offs
-
-COPY INTO from cloud storage provides idempotent loading, and the file itself can be version-controlled in git and deployed as part of a CI/CD pipeline (e.g., uploaded to ADLS via Databricks Asset Bundles or a CI pipeline step). Unlike small inline SQL scripts, COPY INTO from cloud storage scales to millions of rows without performance issues.
-
-`INSERT OVERWRITE` with SQL `VALUES` is appropriate only for the smallest reference tables (a handful of rows). For anything larger, it becomes impractical to maintain SQL literal values in a script.
-
-The key operational advantage of the COPY INTO pattern is that business analysts or operations staff can update reference data by replacing a file in a known cloud storage location — they do not need git access. A scheduled Databricks Job monitors the path and reloads when a new file is detected.
-
-### See Also
-
-- [COPY INTO — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-copy-into)
-- [Delta table `INSERT OVERWRITE` — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/sql-ref-syntax-dml-insert-overwrite-table)
-- `ingestion_cookbook.md` — Reference Data Loading implementation examples
 
 ---
 
