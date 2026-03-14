@@ -2,13 +2,13 @@
 
 ## Databricks
 
-> This cookbook uses Delta Lake, PySpark, Databricks Workflows, and Delta Live Tables exclusively.
+> This cookbook uses Delta Lake, PySpark, Databricks Workflows, and Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT) exclusively.
 
 ---
 
 ## Introduction
 
-This cookbook provides practical, step-by-step guidance for **performance tuning** on Databricks. It covers Delta Lake storage optimisation, Adaptive Query Execution, Photon, caching, cluster sizing, statistics, native incremental loading patterns, and Delta Live Tables incremental pipeline performance. It is intended to be self-contained — no prior knowledge of the specific tuning technique is assumed.
+This cookbook provides practical, step-by-step guidance for **performance tuning** on Databricks. It covers Delta Lake storage optimisation, Adaptive Query Execution, Photon, caching, cluster sizing, statistics, native incremental loading patterns, and Lakeflow Spark Declarative Pipelines incremental pipeline performance. It is intended to be self-contained — no prior knowledge of the specific tuning technique is assumed.
 
 Each method section follows a consistent structure: the problem being solved, the recommended solution with Python and SQL examples, any known concerns or trade-offs, and links to further reading.
 
@@ -59,7 +59,7 @@ databricks bundle deploy --target dev
 | Component | Purpose | Notes |
 |-----------|---------|-------|
 | Databricks Workspace | Execution environment | Unity Catalog recommended |
-| All-Purpose or Job Cluster | PySpark, streaming, DLT pipelines | DBR 13.3+ required for Liquid Clustering |
+| All-Purpose or Job Cluster | PySpark, streaming, SDP pipelines | DBR 13.3+ required for Liquid Clustering |
 | SQL Warehouse (Serverless or Classic) | SQL queries, BI tools, maintenance SQL | Photon is always active on SQL Warehouses |
 | Unity Catalog — Catalog / Schema | Target for output tables | Requires `CREATE TABLE` privilege |
 | ADLS Gen2 / S3 / GCS | Source data for ingestion examples | External location must be configured in Unity Catalog |
@@ -72,7 +72,7 @@ Photon is enabled by selecting a Databricks Runtime version that includes Photon
 
 ## Delta Lake Optimization — OPTIMIZE and Compaction
 
-Frequent incremental writes — from streaming pipelines, Auto Loader batch loads, or DLT pipeline runs — produce many small Parquet files. Delta reads every file in a table scan, so thousands of small files multiply I/O operations and Spark task overhead. OPTIMIZE compacts these files into larger ones, reducing scan time.
+Frequent incremental writes — from streaming pipelines, Auto Loader batch loads, or SDP pipeline runs — produce many small Parquet files. Delta reads every file in a table scan, so thousands of small files multiply I/O operations and Spark task overhead. OPTIMIZE compacts these files into larger ones, reducing scan time.
 
 ### Problem
 
@@ -723,7 +723,7 @@ WHERE name = 'my_production_warehouse';
 
 - **ETL clusters: choose instance type based on workload bottleneck.** Aggregation-heavy jobs (GROUP BY on large tables, many joins) benefit from memory-optimised instances (e.g., Azure `E`-series, AWS `r`-series). Shuffle-heavy jobs (many wide joins, sorts) benefit from compute-optimised instances with more vCPUs.
 - **Autoscaling is beneficial for variable interactive workloads but adds latency:** When Spark needs additional nodes, they must be provisioned and join the cluster — this can take 1–3 minutes for standard instances. Jobs with strict SLAs may prefer fixed-size clusters.
-- **DLT and streaming jobs should use fixed-size clusters:** Autoscaling during streaming or DLT execution can cause executors to be removed while they hold state, leading to stage retries and potential data loss. Use a fixed worker count sized for peak throughput.
+- **SDP and streaming jobs should use fixed-size clusters:** Autoscaling during streaming or SDP execution can cause executors to be removed while they hold state, leading to stage retries and potential data loss. Use a fixed worker count sized for peak throughput.
 - **Always set auto-termination on interactive clusters:** A single forgotten interactive cluster running overnight at 8 DBU/hour incurs ~64 DBUs of waste. Set `autotermination_minutes` to 30–60 minutes on all interactive clusters.
 - **SQL Warehouse sizing:** Start with X-Small or Small for development, and scale up based on observed query times and concurrency. Serverless SQL Warehouses scale automatically — start with a smaller T-shirt size and let the serverless layer handle burst.
 
@@ -942,7 +942,7 @@ WHEN MATCHED THEN UPDATE SET
 WHEN NOT MATCHED THEN INSERT *;
 ```
 
-**Functional difference between SQL and Python approaches:** The SQL `MERGE INTO` runs entirely on the SQL Warehouse using Spark SQL and is simpler to write. The Python `DeltaTable.merge()` is more flexible for complex watermark logic and can be embedded in DLT pipelines or Workflows Python tasks. Both produce the same Delta MERGE operation on disk. For standard incremental mart refreshes scheduled as Workflows SQL tasks, the SQL approach is preferred. For programmatic or parameterised pipelines, use the Python API.
+**Functional difference between SQL and Python approaches:** The SQL `MERGE INTO` runs entirely on the SQL Warehouse using Spark SQL and is simpler to write. The Python `DeltaTable.merge()` is more flexible for complex watermark logic and can be embedded in SDP pipelines or Workflows Python tasks. Both produce the same Delta MERGE operation on disk. For standard incremental mart refreshes scheduled as Workflows SQL tasks, the SQL approach is preferred. For programmatic or parameterised pipelines, use the Python API.
 
 #### Validation — SQL
 
@@ -974,19 +974,19 @@ HAVING cnt > 1;
 
 ---
 
-## Delta Live Tables Pipeline Performance
+## Lakeflow Spark Declarative Pipelines Pipeline Performance
 
-DLT pipelines have their own performance levers: pipeline mode (triggered vs. continuous), table materialisation (streaming table vs. materialized view), and expectations enforcement overhead. Tuning these correctly has a significant impact on pipeline latency and cost.
+SDP pipelines have their own performance levers: pipeline mode (triggered vs. continuous), table materialisation (streaming table vs. materialized view), and expectations enforcement overhead. Tuning these correctly has a significant impact on pipeline latency and cost.
 
 ### Problem
 
-A DLT pipeline is taking longer than expected, consuming excessive resources, or producing more small files than anticipated. It is unclear whether the bottleneck is the pipeline mode, the table type, or the expectations layer.
+An SDP pipeline is taking longer than expected, consuming excessive resources, or producing more small files than anticipated. It is unclear whether the bottleneck is the pipeline mode, the table type, or the expectations layer.
 
 ### Solution
 
-Choose the correct pipeline mode and table type for each workload, and monitor pipeline performance using the DLT event log and Databricks Workflows UI.
+Choose the correct pipeline mode and table type for each workload, and monitor pipeline performance using the SDP event log and Databricks Workflows UI.
 
-#### Python Example — DLT table type selection
+#### Python Example — SDP table type selection
 
 ```python
 import dlt
@@ -1024,7 +1024,7 @@ def bv_customer_derived():
     )
 ```
 
-#### Python Example — DLT pipeline mode configuration
+#### Python Example — SDP pipeline mode configuration
 
 ```python
 # Configure pipeline mode in databricks.yml (Databricks Asset Bundle)
@@ -1050,10 +1050,10 @@ def bv_customer_derived():
 # Use for: real-time vault loading from Kafka/Event Hubs sources
 ```
 
-#### SQL Example — Monitor DLT pipeline performance
+#### SQL Example — Monitor SDP pipeline performance
 
 ```sql
--- Query the DLT event log for pipeline run duration and table statistics
+-- Query the SDP event log for pipeline run duration and table statistics
 SELECT
     origin.flow_name,
     timestamp,
@@ -1079,16 +1079,16 @@ ORDER BY timestamp DESC;
 
 ### Discussion and Concerns
 
-- **Triggered mode is cheaper for batch pipelines:** Triggered DLT pipelines start a cluster, run the pipeline to completion, and terminate the cluster. Continuous mode keeps the cluster running indefinitely. For nightly batch loads, use triggered mode.
-- **Streaming tables produce many small files:** Each micro-batch in a streaming DLT table writes a new set of small files. Run a scoped `OPTIMIZE WHERE load_date >= current_date() - 1` as a post-pipeline Workflows task to compact the newly written files.
-- **Materialised views in DLT are full-recompute:** DLT `@dlt.table` without `readStream()` is a materialised view that is fully recomputed on each pipeline run. For large business vault models (PIT tables, bridge tables), consider building them outside DLT as Workflows SQL tasks to avoid the DLT overhead.
+- **Triggered mode is cheaper for batch pipelines:** Triggered SDP pipelines start a cluster, run the pipeline to completion, and terminate the cluster. Continuous mode keeps the cluster running indefinitely. For nightly batch loads, use triggered mode.
+- **Streaming tables produce many small files:** Each micro-batch in a streaming SDP table writes a new set of small files. Run a scoped `OPTIMIZE WHERE load_date >= current_date() - 1` as a post-pipeline Workflows task to compact the newly written files.
+- **Materialised views in SDP are full-recompute:** SDP `@dlt.table` without `readStream()` is a materialised view that is fully recomputed on each pipeline run. For large business vault models (PIT tables, bridge tables), consider building them outside SDP as Workflows SQL tasks to avoid the SDP overhead.
 - **Expectations (`@dlt.expect_*`) add processing overhead:** Each expectation adds a filter-and-count step to the pipeline execution. For very high-throughput pipelines, limit expectations to critical columns only. Use Databricks Lakehouse Monitoring for broader data quality monitoring outside the pipeline.
 
 ### See Also
 
-- [Delta Live Tables documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
-- [DLT pipeline modes — triggered vs. continuous](https://docs.databricks.com/en/delta-live-tables/pipeline-mode.html)
-- [DLT event log](https://docs.databricks.com/en/delta-live-tables/observability.html)
+- [Lakeflow Spark Declarative Pipelines documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [SDP pipeline modes — triggered vs. continuous](https://docs.databricks.com/en/delta-live-tables/pipeline-mode.html)
+- [SDP event log](https://docs.databricks.com/en/delta-live-tables/observability.html)
 
 ---
 
@@ -1105,7 +1105,7 @@ ORDER BY timestamp DESC;
 | Photon query ratio | Cluster Metrics / SQL Warehouse query history | Low Photon coverage indicating Python UDFs or non-eligible operations dominating |
 | AQE plan changes | Spark UI SQL tab | "AQE" labels on plan nodes — confirm skew handling and broadcast join conversion are firing |
 | Delta time travel versions | `DESCRIBE HISTORY catalog.schema.table` | Excessive version accumulation — VACUUM may be overdue |
-| DLT pipeline duration | DLT event log / Workflows UI | Increasing pipeline run times — may indicate small file accumulation or growing table scans |
+| SDP pipeline duration | SDP event log / Workflows UI | Increasing pipeline run times — may indicate small file accumulation or growing table scans |
 | Incremental MERGE performance | Workflows job run history — mart refresh task | MERGE taking as long as a full rebuild — watermark column may not be filtering correctly |
 
 ### Metrics for Success
@@ -1117,4 +1117,4 @@ ORDER BY timestamp DESC;
 - [ ] Incremental MERGE jobs process only changed rows — run times are proportional to the change volume, not the full table size
 - [ ] VACUUM runs weekly on all production tables; no table retains unreferenced files older than 14 days
 - [ ] Photon is confirmed active on all SQL Warehouse queries (Photon indicator in query history)
-- [ ] DLT pipelines in triggered mode complete and terminate within the scheduled batch window
+- [ ] SDP pipelines in triggered mode complete and terminate within the scheduled batch window

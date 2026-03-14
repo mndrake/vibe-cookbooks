@@ -1,6 +1,6 @@
 # Cookbook Recommendations — Databricks
 
-> **Scope:** Focused on native Databricks tooling — PySpark, Spark SQL, Delta Lake, Delta Live Tables, Databricks Workflows, and Databricks Asset Bundles.
+> **Scope:** Focused on native Databricks tooling — PySpark, Spark SQL, Delta Lake, Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), Databricks Workflows, and Databricks Asset Bundles.
 
 ---
 
@@ -42,7 +42,7 @@ Step-by-step implementation guide for all native ingestion methods. Each method 
 | File Ingestion — COPY INTO | Perform a one-time or ad hoc bulk load from files already in cloud storage |
 | File Ingestion — SFTP | Receive files from a partner or vendor system via SFTP |
 | Streaming Ingestion — Structured Streaming | Consume events from Kafka, Azure Event Hubs, or Kinesis at low latency |
-| Streaming Ingestion — Delta Live Tables | Build a declarative multi-hop streaming pipeline with data quality enforcement |
+| Streaming Ingestion — Lakeflow Spark Declarative Pipelines (SDP) | Build a declarative multi-hop streaming pipeline with data quality enforcement |
 | Database Ingestion — JDBC | Extract from a relational database (SQL Server, PostgreSQL, MySQL, Oracle) |
 | Managed Ingestion — Lakeflow Connect | Ingest from SaaS applications (Salesforce, Workday, ServiceNow) |
 | Managed Ingestion — Partner Connectors | Integrate Fivetran or Airbyte as the managed ingestion layer |
@@ -77,7 +77,7 @@ Step-by-step implementation guide for Delta Lake transformations, aggregations, 
 | Data Cleansing and Deduplication | Standardise types, handle nulls, and remove duplicate records |
 | Slowly Changing Dimensions — SCD Type 1 | Maintain current state of a slowly changing attribute with no history |
 | Slowly Changing Dimensions — SCD Type 2 (Native Delta MERGE) | Track full history of attribute changes using a two-pass MERGE pattern |
-| Slowly Changing Dimensions — SCD Type 2 via DLT | Track history declaratively in a DLT pipeline using `APPLY CHANGES INTO` |
+| Slowly Changing Dimensions — SCD Type 2 via SDP | Track history declaratively in an SDP pipeline using `APPLY CHANGES INTO` |
 | Joins and Enrichment | Enrich a fact stream or table with dimension attributes |
 | Incremental Load Patterns — Databricks Jobs | Process only records changed since the last run (append, MERGE, or partition overwrite) |
 
@@ -90,8 +90,8 @@ Architecture and design reference for transformation decisions. Read this when c
 | Section | Research when you need to... |
 |---------|------------------------------|
 | Medallion Architecture | Understand the Bronze → Silver → Gold layering model and the responsibilities of each layer |
-| Native Pipeline Layer Mapping | Map PySpark notebooks, DLT pipelines, and Databricks Jobs to Medallion layers |
-| PySpark vs. Spark SQL vs. DLT | Choose the right native transformation tool for a given workload |
+| Native Pipeline Layer Mapping | Map PySpark notebooks, SDP pipelines, and Databricks Jobs to Medallion layers |
+| PySpark vs. Spark SQL vs. SDP | Choose the right native transformation tool for a given workload |
 
 ---
 

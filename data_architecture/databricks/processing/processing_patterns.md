@@ -2,7 +2,7 @@
 
 ## Databricks
 
-> **Scope note:** This document covers patterns implemented entirely with PySpark, Spark SQL, Delta Lake, Delta Live Tables (DLT), and Databricks Asset Bundles.
+> **Scope note:** This document covers patterns implemented entirely with PySpark, Spark SQL, Delta Lake, Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), and Databricks Asset Bundles.
 
 ---
 
@@ -13,8 +13,8 @@ This document describes the key architectural patterns used for processing, summ
 The patterns covered here are:
 
 - **Medallion Architecture** — the canonical layered data organisation pattern for Delta Lake
-- **Native Pipeline Layer Mapping** — how PySpark notebooks, DLT pipelines, and Databricks Jobs map to medallion layers
-- **PySpark vs. Spark SQL vs. DLT** — choosing the right native transformation tool for the job
+- **Native Pipeline Layer Mapping** — how PySpark notebooks, SDP pipelines, and Databricks Jobs map to medallion layers
+- **PySpark vs. Spark SQL vs. SDP** — choosing the right native transformation tool for the job
 
 ---
 
@@ -42,7 +42,7 @@ The primary design goal of Medallion is **progressive trust** — raw data is pr
 - Applies type casting, null handling, deduplication, and schema enforcement.
 - Business keys are validated and standardised (e.g., consistent casing, trimmed whitespace).
 - Joins across source systems may be applied here when the join is structural rather than analytical (e.g., joining an order header with order lines from the same source).
-- SCD Type 2 patterns for dimension tracking belong in Silver when dimensions are shared across domains. Native implementation uses Delta MERGE INTO (two-pass pattern) or DLT `APPLY CHANGES INTO`.
+- SCD Type 2 patterns for dimension tracking belong in Silver when dimensions are shared across domains. Native implementation uses Delta MERGE INTO (two-pass pattern) or SDP `APPLY CHANGES INTO`.
 - Silver is the foundation layer for most analytical workloads — it should be trusted, typed, and stable.
 - Schema changes require a versioned migration, not silent drift.
 
@@ -53,7 +53,7 @@ The primary design goal of Medallion is **progressive trust** — raw data is pr
 - Business logic — including KPI definitions, fiscal calendar adjustments, and attribution rules — lives here, not in Silver.
 - Gold tables are often partitioned and Z-ORDERed by the dimensions most frequently filtered by end consumers.
 - Multiple Gold schemas may exist, each owned by a different business domain (e.g., `gold_finance`, `gold_marketing`), all built from the same Silver foundation.
-- Orchestrated by Databricks Jobs (task clusters or serverless) or by DLT Gold-layer datasets.
+- Orchestrated by Databricks Jobs (task clusters or serverless) or by SDP Gold-layer datasets.
 
 ### When to Add or Collapse Layers
 
@@ -69,7 +69,7 @@ In native Databricks pipelines, the quarantine layer is typically a separate Del
 
 **Adding a layer — Intermediate / Enriched Silver**
 
-For complex pipelines with many joins and lookups between Silver sources, a named intermediate layer (Silver+, Enriched, or Integrated) can reduce the complexity of Gold logic and make the lineage clearer. In native pipelines, this is expressed as an intermediate DLT dataset or a dedicated Job task writing to a `catalog.silver_enriched` schema.
+For complex pipelines with many joins and lookups between Silver sources, a named intermediate layer (Silver+, Enriched, or Integrated) can reduce the complexity of Gold logic and make the lineage clearer. In native pipelines, this is expressed as an intermediate SDP dataset or a dedicated Job task writing to a `catalog.silver_enriched` schema.
 
 **Collapsing layers**
 
@@ -89,7 +89,7 @@ A data contract at a layer boundary defines what the consuming layer can depend 
 | Latency SLA | Defined by ingestion pattern (e.g., micro-batch every 5 minutes) | Defined by business reporting cadence (e.g., hourly refresh for Gold) |
 | Breaking change protocol | Bronze may change structure; Silver must handle or quarantine | Silver schema changes require versioning and migration before Gold is updated |
 
-In native pipelines, contracts are enforced via Unity Catalog table constraints (`ALTER TABLE ... ADD CONSTRAINT`), DLT `EXPECT` and `EXPECT OR DROP` quality rules, and Databricks Jobs health checks (row count assertions after each task).
+In native pipelines, contracts are enforced via Unity Catalog table constraints (`ALTER TABLE ... ADD CONSTRAINT`), SDP `EXPECT` and `EXPECT OR DROP` quality rules, and Databricks Jobs health checks (row count assertions after each task).
 
 **The cardinal rule: no business logic in Bronze.** Business logic includes KPI calculations, fiscal period assignments, domain-specific aggregations, and any transformation whose definition is owned by the business rather than by the ingestion pipeline.
 
@@ -105,12 +105,12 @@ In native pipelines, contracts are enforced via Unity Catalog table constraints 
 
 ### Overview
 
-In a native Databricks pipeline, transformation logic is organised into notebooks, PySpark scripts, Spark SQL scripts, DLT pipelines, and Databricks Jobs. This section documents how those artefacts map to Medallion layers so that pipeline structure is predictable and consistent.
+In a native Databricks pipeline, transformation logic is organised into notebooks, PySpark scripts, Spark SQL scripts, SDP pipelines, and Databricks Jobs. This section documents how those artefacts map to Medallion layers so that pipeline structure is predictable and consistent.
 
 The two primary orchestration mechanisms are:
 
-- **Databricks Jobs** — a DAG of tasks (notebooks, Python scripts, SQL scripts, Delta Live Tables pipelines, JAR tasks) with dependency management, scheduling, retry logic, and alerting. The standard choice for operational batch and streaming pipelines.
-- **Delta Live Tables (DLT)** — a declarative pipeline framework where datasets are defined as SQL or Python `LIVE TABLE` or `STREAMING LIVE TABLE` definitions. DLT manages pipeline state, quality rules, lineage, and incremental processing automatically.
+- **Databricks Jobs** — a DAG of tasks (notebooks, Python scripts, SQL scripts, Lakeflow Spark Declarative Pipelines (SDP) pipelines, JAR tasks) with dependency management, scheduling, retry logic, and alerting. The standard choice for operational batch and streaming pipelines.
+- **Lakeflow Spark Declarative Pipelines (SDP)** — a declarative pipeline framework where datasets are defined as SQL or Python `LIVE TABLE` or `STREAMING LIVE TABLE` definitions. SDP manages pipeline state, quality rules, lineage, and incremental processing automatically.
 
 ### Mapping to Medallion — Databricks Jobs
 
@@ -133,27 +133,27 @@ Each notebook corresponds to one or more Databricks Jobs tasks. Task dependencie
 | Incremental append | `df.write.format("delta").mode("append").saveAsTable(...)` |
 | Incremental partition overwrite | `df.write.format("delta").mode("overwrite").option("partitionOverwriteMode", "dynamic").saveAsTable(...)` |
 
-### Mapping to Medallion — Delta Live Tables
+### Mapping to Medallion — Lakeflow Spark Declarative Pipelines
 
-| DLT Dataset Type | Medallion Layer | Notes |
+| SDP Dataset Type | Medallion Layer | Notes |
 |---|---|---|
-| `STREAMING LIVE TABLE` with Auto Loader source | Bronze | Incremental ingestion from cloud storage; DLT manages checkpoints |
+| `STREAMING LIVE TABLE` with Auto Loader source | Bronze | Incremental ingestion from cloud storage; SDP manages checkpoints |
 | `LIVE TABLE` or `STREAMING LIVE TABLE` with cleansing logic | Silver | `EXPECT` rules enforce quality; `EXPECT OR DROP` quarantines bad records |
-| `APPLY CHANGES INTO` | Silver — SCD | Native DLT CDC / SCD Type 1 and SCD Type 2 without manual MERGE logic |
-| `LIVE TABLE` with aggregations | Gold | DLT refreshes Gold tables when Silver dependencies update |
+| `APPLY CHANGES INTO` | Silver — SCD | Native SDP CDC / SCD Type 1 and SCD Type 2 without manual MERGE logic |
+| `LIVE TABLE` with aggregations | Gold | SDP refreshes Gold tables when Silver dependencies update |
 
 **`APPLY CHANGES INTO`** handles SCD Type 1 and SCD Type 2 history tracking automatically from a CDC source (Change Data Feed or a sequence-keyed source).
 
 ### See Also
 
 - [Databricks Jobs documentation](https://learn.microsoft.com/en-us/azure/databricks/jobs/)
-- [Delta Live Tables documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
-- [DLT APPLY CHANGES INTO](https://docs.databricks.com/en/delta-live-tables/cdc.html)
+- [Lakeflow Spark Declarative Pipelines documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [SDP APPLY CHANGES INTO](https://docs.databricks.com/en/delta-live-tables/cdc.html)
 - [Databricks Asset Bundles](https://docs.databricks.com/en/dev-tools/bundles/index.html)
 
 ---
 
-## PySpark vs. Spark SQL vs. DLT
+## PySpark vs. Spark SQL vs. SDP
 
 ### Overview
 
@@ -181,19 +181,19 @@ Use Spark SQL when:
 - The transformation is being developed in a Databricks SQL notebook or a SQL Warehouse query.
 - Readability and accessibility for audit or compliance review are important — SQL is universally readable.
 
-**Delta Live Tables (DLT)**
+**Lakeflow Spark Declarative Pipelines (SDP)**
 
-Use DLT when:
+Use SDP when:
 
 - The transformation pipeline requires declarative quality rules (`EXPECT`, `EXPECT OR DROP`, `EXPECT OR FAIL`) that are enforced and tracked automatically with built-in quarantine metrics.
 - SCD Type 2 history tracking is needed from a CDC source — `APPLY CHANGES INTO` eliminates manual MERGE logic.
 - Pipeline lineage, data quality metrics, and incremental processing should be managed by the platform rather than bespoke notebook logic.
-- The team is building a long-lived, maintained transformation layer that multiple people contribute to over time (DLT provides declarative pipeline management with built-in quality rules, lineage, and observability).
-- The pipeline must handle both batch and streaming sources in the same DAG — DLT supports mixed source types transparently.
+- The team is building a long-lived, maintained transformation layer that multiple people contribute to over time (SDP provides declarative pipeline management with built-in quality rules, lineage, and observability).
+- The pipeline must handle both batch and streaming sources in the same DAG — SDP supports mixed source types transparently.
 
 **Tool selection summary:**
 
-| Criterion | PySpark | Spark SQL | DLT |
+| Criterion | PySpark | Spark SQL | SDP |
 |---|---|---|---|
 | Complex procedural logic | Best | Poor | Limited |
 | Streaming pipelines | Best | Limited | Best (declarative) |
@@ -214,6 +214,6 @@ Native Python functions defined in a shared utility module (e.g., `src/transform
 
 - [PySpark API documentation](https://spark.apache.org/docs/latest/api/python/)
 - [Databricks SQL reference](https://docs.databricks.com/en/sql/language-manual/index.html)
-- [Delta Live Tables documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [Lakeflow Spark Declarative Pipelines documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
 - [Databricks Asset Bundles](https://docs.databricks.com/en/dev-tools/bundles/index.html)
 - [Processing, Summarising, and Transformation Cookbook](./processing_cookbook.md)

@@ -1,7 +1,7 @@
 # Processing, Summarizing, and Transformation Cookbook — Native Databricks
 
 > **Scope note:** This cookbook is the **native Databricks version** of the processing and transformation guide.
-> All patterns are implemented with PySpark, Spark SQL, Delta Lake, Delta Live Tables (DLT), and
+> All patterns are implemented with PySpark, Spark SQL, Delta Lake, Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), and
 > Databricks Jobs — no dbt dependency is required.
 > For the dbt-integrated version of these recipes, see
 > [../../../databricks_and_dbt/processing/processing_cookbook.md](../../../databricks_and_dbt/processing/processing_cookbook.md).
@@ -10,7 +10,7 @@
 
 ## Introduction
 
-This cookbook provides practical, step-by-step guidance for **processing, summarising, and transforming data** on Databricks using only native Databricks tooling. It covers Delta Lake transformations (MERGE, UPDATE, DELETE), aggregations and window functions, data cleansing and deduplication, Slowly Changing Dimension (SCD) patterns (implemented with Delta MERGE INTO and DLT APPLY CHANGES INTO), incremental load patterns using Databricks Jobs and DLT, reusable transformation logic using native Python functions and Spark SQL UDFs, date spine generation using `sequence()` and `explode()`, and pipeline orchestration using Databricks Jobs and Databricks Asset Bundles.
+This cookbook provides practical, step-by-step guidance for **processing, summarising, and transforming data** on Databricks using only native Databricks tooling. It covers Delta Lake transformations (MERGE, UPDATE, DELETE), aggregations and window functions, data cleansing and deduplication, Slowly Changing Dimension (SCD) patterns (implemented with Delta MERGE INTO and SDP APPLY CHANGES INTO), incremental load patterns using Databricks Jobs and SDP, reusable transformation logic using native Python functions and Spark SQL UDFs, date spine generation using `sequence()` and `explode()`, and pipeline orchestration using Databricks Jobs and Databricks Asset Bundles.
 
 Each method section follows a consistent structure: the problem being solved, the recommended solution with Python and SQL examples, any known concerns or trade-offs, and links to further reading. For architectural guidance on when to choose between these patterns, see the [Processing, Summarising, and Transformation Architectural Patterns (Native)](./processing_patterns.md) document.
 
@@ -20,7 +20,7 @@ Each method section follows a consistent structure: the problem being solved, th
 
 ### Installing Your Development Environment
 
-> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake, and Delta Live Tables are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
+> **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake, and Lakeflow Spark Declarative Pipelines (SDP) are pre-installed with every Databricks Runtime. No `pip install` is needed to run the code examples in this cookbook on a cluster.
 >
 > **Local development:** The tools below are installed on your local machine for CLI operations and Asset Bundle deployment.
 
@@ -29,7 +29,7 @@ Each method section follows a consistent structure: the problem being solved, th
 | Python | 3.9+ | Local dev | Required for the Databricks CLI and local PySpark unit tests |
 | PySpark | Provided by Databricks Runtime | Local dev only | Bundled with Databricks Runtime — `pip install pyspark` only for local unit testing |
 | [Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/index.html) | Latest (v0.200+) | Local dev | Used for workspace interaction, secrets management, and deploying Asset Bundles |
-| [Databricks Asset Bundles (DAB)](https://docs.databricks.com/en/dev-tools/bundles/index.html) | Bundled with Databricks CLI v0.200+ | Local dev | Used to define and deploy Jobs, DLT pipelines, and permissions as code |
+| [Databricks Asset Bundles (DAB)](https://docs.databricks.com/en/dev-tools/bundles/index.html) | Bundled with Databricks CLI v0.200+ | Local dev | Used to define and deploy Jobs, SDP pipelines, and permissions as code |
 
 Install Python dependencies (local machine only — not needed on Databricks clusters):
 
@@ -59,7 +59,7 @@ databricks bundle init
 databricks bundle init --template default-python
 ```
 
-This creates a `databricks.yml` bundle manifest, a `resources/` folder for Job and DLT pipeline definitions, and a `src/` folder for notebook and Python source code.
+This creates a `databricks.yml` bundle manifest, a `resources/` folder for Job and SDP pipeline definitions, and a `src/` folder for notebook and Python source code.
 
 Validate and deploy the bundle:
 
@@ -93,7 +93,7 @@ databricks bundle validate
 databricks bundle deploy --target dev
 ```
 
-Review `databricks.yml` for workspace host, cluster configuration, job definitions, and DLT pipeline references before deploying. Check `resources/` for Job task DAGs and DLT pipeline YAML definitions.
+Review `databricks.yml` for workspace host, cluster configuration, job definitions, and SDP pipeline references before deploying. Check `resources/` for Job task DAGs and SDP pipeline YAML definitions.
 
 ---
 
@@ -104,7 +104,7 @@ Review `databricks.yml` for workspace host, cluster configuration, job definitio
 | Component | Purpose | Notes |
 |-----------|---------|-------|
 | Databricks Workspace | Execution environment for all PySpark and SQL examples | Unity Catalog must be enabled for catalog-qualified table references |
-| Spark Cluster | Required for PySpark examples and DLT pipelines | Databricks Runtime 12.2 LTS or later recommended for deletion vector support |
+| Spark Cluster | Required for PySpark examples and SDP pipelines | Databricks Runtime 12.2 LTS or later recommended for deletion vector support |
 | Databricks SQL Warehouse | Required for Spark SQL examples in SQL Editor and notebook SQL cells | Serverless or Pro tier; Standard tier does not support `CREATE TABLE AS SELECT` with Unity Catalog in all regions |
 | Unity Catalog | Target for all output Delta tables | Requires `CREATE TABLE` privilege on the target schema |
 | Delta tables for source data | Input to all transformation examples | Source tables should exist in a Bronze or Silver schema before running examples |
@@ -118,7 +118,7 @@ ALTER TABLE catalog.schema.my_table
 SET TBLPROPERTIES (delta.enableChangeDataFeed = true);
 ```
 
-CDF is required for efficient CDC-based MERGE patterns where only changed rows from the source need to be processed, and is the recommended source format for DLT `APPLY CHANGES INTO` pipelines.
+CDF is required for efficient CDC-based MERGE patterns where only changed rows from the source need to be processed, and is the recommended source format for SDP `APPLY CHANGES INTO` pipelines.
 
 ---
 
@@ -565,7 +565,7 @@ WHEN NOT MATCHED THEN
 
 SCD Type 2 preserves the full history of dimension changes by adding a new row for each change, tracking the effective date range and a flag indicating the currently active version. This allows fact tables to join to the dimension version that was active at the time of the transaction.
 
-The native Databricks implementation uses a two-pass Delta MERGE pattern. For pipelines already using Delta Live Tables, see [SCD Type 2 via DLT APPLY CHANGES INTO](#slowly-changing-dimensions--scd-type-2-via-dlt-apply-changes-into) below.
+The native Databricks implementation uses a two-pass Delta MERGE pattern. For pipelines already using Lakeflow Spark Declarative Pipelines, see [SCD Type 2 via SDP APPLY CHANGES INTO](#slowly-changing-dimensions--scd-type-2-via-sdp-apply-changes-into) below.
 
 ### Problem
 
@@ -711,14 +711,14 @@ WHERE effective_from <= '2024-06-01'
 
 - [Databricks SCD Type 2 with Delta Lake](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
 - [Table deletes, updates, and merges — Delta Lake](https://docs.delta.io/latest/delta-update.html)
-- [SCD Type 2 via DLT APPLY CHANGES INTO — next method](#slowly-changing-dimensions--scd-type-2-via-dlt-apply-changes-into)
+- [SCD Type 2 via SDP APPLY CHANGES INTO — next method](#slowly-changing-dimensions--scd-type-2-via-sdp-apply-changes-into)
 - [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_patterns.md)
 
 ---
 
-## Slowly Changing Dimensions — SCD Type 2 via DLT APPLY CHANGES INTO
+## Slowly Changing Dimensions — SCD Type 2 via SDP APPLY CHANGES INTO
 
-Delta Live Tables provides a declarative `APPLY CHANGES INTO` statement that automates SCD Type 2 history tracking from a CDC source. It replaces the manual two-pass MERGE pattern with a single dataset definition that DLT manages incrementally.
+Lakeflow Spark Declarative Pipelines provides a declarative `APPLY CHANGES INTO` statement that automates SCD Type 2 history tracking from a CDC source. It replaces the manual two-pass MERGE pattern with a single dataset definition that SDP manages incrementally.
 
 ### Problem
 
@@ -726,9 +726,9 @@ A `dim_customer` dimension needs SCD Type 2 history tracking on `name` and `addr
 
 ### Solution
 
-Define an `APPLY CHANGES INTO` target in a DLT pipeline. DLT handles the CDC apply logic, sequence ordering, and type-2 versioning automatically.
+Define an `APPLY CHANGES INTO` target in an SDP pipeline. SDP handles the CDC apply logic, sequence ordering, and type-2 versioning automatically.
 
-#### Python Example (DLT pipeline notebook)
+#### Python Example (SDP pipeline notebook)
 
 ```python
 import dlt
@@ -756,7 +756,7 @@ dlt.apply_changes(
 )
 ```
 
-#### SQL Example (DLT pipeline notebook)
+#### SQL Example (SDP pipeline notebook)
 
 ```sql
 -- Define the CDC source view
@@ -772,7 +772,7 @@ STORED AS SCD TYPE 2
 TRACK HISTORY ON name, address;
 ```
 
-DLT automatically manages the `__START_AT` and `__END_AT` metadata columns for each historical version. Query the current version:
+SDP automatically manages the `__START_AT` and `__END_AT` metadata columns for each historical version. Query the current version:
 
 ```sql
 SELECT * FROM main.silver.dim_customer
@@ -789,15 +789,15 @@ WHERE __START_AT <= '2024-06-01'
 
 ### Discussion and Concerns
 
-- **DLT manages SCD metadata columns:** Unlike the manual two-pass MERGE pattern, you do not define `effective_from`, `effective_to`, or `is_current` columns. DLT adds `__START_AT` and `__END_AT` columns automatically. Column names can be customised via `track_history_except_column_list` parameter.
-- **Sequence ordering is critical:** The `SEQUENCE BY` column must be monotonically increasing per key. DLT uses this column to determine which change event is the most recent when multiple events arrive in the same micro-batch.
+- **SDP manages SCD metadata columns:** Unlike the manual two-pass MERGE pattern, you do not define `effective_from`, `effective_to`, or `is_current` columns. SDP adds `__START_AT` and `__END_AT` columns automatically. Column names can be customised via `track_history_except_column_list` parameter.
+- **Sequence ordering is critical:** The `SEQUENCE BY` column must be monotonically increasing per key. SDP uses this column to determine which change event is the most recent when multiple events arrive in the same micro-batch.
 - **Hard deletes:** To handle hard deletes from the source, add `APPLY AS DELETE WHEN operation = "DELETE"` to the APPLY CHANGES statement when reading from a CDF source that includes delete operations.
-- **DLT vs. batch MERGE trade-off:** `APPLY CHANGES INTO` is significantly simpler to implement and maintain than the two-pass MERGE pattern. However, it requires running the pipeline in DLT, which has its own compute and management overhead. For simple batch pipelines that do not benefit from DLT's streaming and quality features, the manual two-pass MERGE may be a lighter-weight choice.
+- **SDP vs. batch MERGE trade-off:** `APPLY CHANGES INTO` is significantly simpler to implement and maintain than the two-pass MERGE pattern. However, it requires running the pipeline in SDP, which has its own compute and management overhead. For simple batch pipelines that do not benefit from SDP's streaming and quality features, the manual two-pass MERGE may be a lighter-weight choice.
 
 ### See Also
 
-- [DLT APPLY CHANGES INTO documentation](https://docs.databricks.com/en/delta-live-tables/cdc.html)
-- [DLT SCD Type 2 reference](https://docs.databricks.com/en/delta-live-tables/cdc.html#scd-type-2)
+- [SDP APPLY CHANGES INTO documentation](https://docs.databricks.com/en/delta-live-tables/cdc.html)
+- [SDP SCD Type 2 reference](https://docs.databricks.com/en/delta-live-tables/cdc.html#scd-type-2)
 - [SCD Type 2 via two-pass MERGE — previous method](#slowly-changing-dimensions--scd-type-2-native-delta-merge)
 
 ---
@@ -1014,7 +1014,7 @@ WHERE event_date = current_date();
 
 ## Reusable Transformation Logic — Native Python Functions and Spark SQL UDFs
 
-dbt macros are reusable Jinja-SQL functions that eliminate copy-pasting logic across models. In a native Databricks pipeline, the same reuse is achieved through native Python functions (for PySpark pipelines) and Spark SQL User-Defined Functions (for SQL notebooks and DLT pipelines).
+dbt macros are reusable Jinja-SQL functions that eliminate copy-pasting logic across models. In a native Databricks pipeline, the same reuse is achieved through native Python functions (for PySpark pipelines) and Spark SQL User-Defined Functions (for SQL notebooks and SDP pipelines).
 
 ### Problem
 
@@ -1098,7 +1098,7 @@ AS $$
 $$;
 ```
 
-Use the function in any SQL notebook or DLT pipeline in the same catalog:
+Use the function in any SQL notebook or SDP pipeline in the same catalog:
 
 ```sql
 SELECT
@@ -1125,7 +1125,7 @@ PIVOT (
 
 ### Discussion and Concerns
 
-- **Unity Catalog SQL functions are persistent:** Unlike dbt macros (which are compile-time Jinja), Unity Catalog SQL functions are stored in the catalog and callable from any notebook, DLT pipeline, or SQL Warehouse in the same catalog without re-registration.
+- **Unity Catalog SQL functions are persistent:** Unlike dbt macros (which are compile-time Jinja), Unity Catalog SQL functions are stored in the catalog and callable from any notebook, SDP pipeline, or SQL Warehouse in the same catalog without re-registration.
 - **PySpark pivot is dynamic; SQL PIVOT is static:** `groupBy().pivot().agg()` in PySpark resolves pivot values at runtime from the data. SQL `PIVOT` requires a static list of values. If the set of pivot values changes, the SQL query must be updated. For dynamic pivoting in SQL, use `CASE`-based aggregations or route to PySpark.
 - **Unit testing native functions:** PySpark functions in a Python module can be unit-tested with pytest and a local SparkSession. SQL UDFs can be tested with `SELECT catalog.gold.fiscal_quarter('2024-05-01')` directly in a notebook. Neither requires a full pipeline run to validate.
 - **Packaging for Asset Bundles:** Include the `src/` folder in `databricks.yml` as a Python wheel or notebook library so that all Job tasks in the bundle have access to the shared utility module.
@@ -1264,7 +1264,7 @@ SELECT date_day FROM date_spine ORDER BY date_day;
 
 ## Pipeline Orchestration — Databricks Jobs and Asset Bundles
 
-Databricks Jobs is the native orchestration layer for batch and streaming pipelines. It replaces dbt CLI commands (`dbt run`, `dbt test`, `dbt snapshot`) with a DAG of tasks that can include notebook tasks, Python script tasks, SQL tasks, DLT pipeline tasks, and Databricks Asset Bundle deployments.
+Databricks Jobs is the native orchestration layer for batch and streaming pipelines. It replaces dbt CLI commands (`dbt run`, `dbt test`, `dbt snapshot`) with a DAG of tasks that can include notebook tasks, Python script tasks, SQL tasks, SDP pipeline tasks, and Databricks Asset Bundle deployments.
 
 ### Problem
 
@@ -1420,7 +1420,7 @@ SELECT
 - [Databricks Jobs documentation](https://learn.microsoft.com/en-us/azure/databricks/jobs/)
 - [Databricks Asset Bundles documentation](https://docs.databricks.com/en/dev-tools/bundles/index.html)
 - [Databricks Jobs CI/CD with GitHub Actions](https://docs.databricks.com/en/dev-tools/bundles/ci-cd.html)
-- [Delta Live Tables pipeline orchestration](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [Lakeflow Spark Declarative Pipelines orchestration](https://docs.databricks.com/en/delta-live-tables/index.html)
 
 ---
 
@@ -1437,14 +1437,14 @@ SELECT
 | MERGE execution time | Spark UI job timeline in Databricks (click through from Jobs run); `system.query.history` | MERGE jobs exceeding SLA threshold — indicates table needs OPTIMIZE/Z-ORDER or AQE tuning |
 | Data freshness | `DESCRIBE DETAIL catalog.silver.customers` — `lastModified` timestamp | Tables not refreshed within expected cadence |
 | Deletion vector compaction | `DESCRIBE DETAIL` — `numDeletionVectorRows` | High deletion vector row count indicates OPTIMIZE is needed to compact files |
-| DLT pipeline health | Delta Live Tables UI — pipeline graph; event log table `system.event_log` | Failed datasets, quality rule violation rates, pipeline restart loops |
+| SDP pipeline health | Lakeflow Spark Declarative Pipelines UI — pipeline graph; event log table `system.event_log` | Failed datasets, quality rule violation rates, pipeline restart loops |
 
 ### Metrics for Success
 
 - [ ] Quality assertion notebook passes on every scheduled run — all assertions produce zero violation rows in job logs
 - [ ] No unexpected nulls in Silver key columns — null key assertion in the post-pipeline quality task produces zero rows
 - [ ] Deduplication check passes: row count after deduplication equals the count of distinct values on the deduplication key column
-- [ ] SCD Type 2 dimension tables have exactly one `is_current = true` (or `__END_AT IS NULL` for DLT) record per business key — validated by post-run assertion query
+- [ ] SCD Type 2 dimension tables have exactly one `is_current = true` (or `__END_AT IS NULL` for SDP) record per business key — validated by post-run assertion query
 - [ ] MERGE execution time for all incremental tasks is within the defined SLA (e.g., under 15 minutes for a 500 million row fact table with Z-ORDER on the merge key)
 - [ ] Gold table row counts are non-decreasing on each daily run (unless a deliberate delete or correction run has been executed) — monitored via the row count assertion task
 - [ ] Databricks Asset Bundle validates and deploys successfully in CI on every pull request merge to main

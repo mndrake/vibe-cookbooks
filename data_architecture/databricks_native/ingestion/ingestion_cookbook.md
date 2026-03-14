@@ -131,6 +131,8 @@ databricks clusters list
 
 ### File Ingestion — Auto Loader
 
+> **Architecture diagram:** [Auto Loader overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/) includes diagrams of the checkpoint-based file tracking mechanism and the difference between directory listing and file notification discovery modes.
+
 Auto Loader (`cloudFiles` format) incrementally ingests files from cloud storage (ADLS Gen2, S3, GCS) into Delta Lake. It tracks which files have been processed using a checkpoint directory, providing exactly-once delivery guarantees without manual tracking.
 
 #### Problem
@@ -361,6 +363,8 @@ FROM main.bronze.partner_orders;
 
 Structured Streaming ingests from Kafka, Azure Event Hubs, or Amazon Kinesis with sub-minute latency and exactly-once semantics via checkpoint.
 
+> **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) diagrams the micro-batch execution model, offset tracking, and checkpoint recovery. [Azure Event Hubs with Spark — Microsoft](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-spark-connector) shows the Event Hubs partition-to-Spark-partition mapping.
+
 #### Problem
 
 Order events are published to Azure Event Hubs at high volume and must be written to a bronze Delta table with sub-minute latency, with automatic recovery on failure.
@@ -428,6 +432,8 @@ ORDER BY 1 DESC;
 ---
 
 ### Pipeline Ingestion — Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT)
+
+> **Architecture diagram:** [Lakeflow Spark Declarative Pipelines overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/) includes a pipeline DAG diagram showing table dependencies, data quality expectation enforcement points, and the Bronze → Silver → Gold lineage graph. [Pipeline monitoring — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/observability) shows the event log and observability dashboard.
 
 > **Naming note:** Databricks has renamed Delta Live Tables (DLT) to **Lakeflow Spark Declarative Pipelines (SDP)**. The underlying feature is identical — all DLT notebook code, `@dlt.table` decorators, SQL `CREATE OR REFRESH STREAMING TABLE` syntax, and `dlt.*` Python functions are unchanged. This cookbook uses the new name going forward.
 >
@@ -543,6 +549,8 @@ FROM STREAM(LIVE.orders_bronze);
 
 Spark's JDBC data source reads directly from relational databases over a JDBC connection. It is the standard pattern when data cannot be exported to cloud storage first and no CDC feed is available.
 
+> **Architecture diagram:** [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/connect/external-systems/jdbc) includes a diagram of parallel partition reads showing how `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions` split the source table into concurrent range queries.
+
 #### Problem
 
 An Azure SQL Database must be ingested into Delta Lake on a scheduled basis. The table contains tens of millions of rows and must be parallelised to meet the ingestion window.
@@ -656,6 +664,8 @@ LIMIT 20;
 ## Managed Ingestion
 
 ### Managed Ingestion — Lakeflow Connect
+
+> **Architecture diagram:** [Lakeflow Connect overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) shows the architecture of Lakeflow Connect: SaaS source → Databricks serverless compute → Delta tables under Unity Catalog, with no data transiting third-party infrastructure.
 
 Lakeflow Connect provides Databricks-native managed connectors for SaaS applications and databases. As of March 2026, it is GA for Salesforce, Workday, and SQL Server. Pipelines run on serverless compute within Databricks, governed by Unity Catalog.
 

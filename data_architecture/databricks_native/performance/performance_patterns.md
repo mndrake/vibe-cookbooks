@@ -1,4 +1,4 @@
-> **Native Databricks version.** This document covers performance tuning patterns using Databricks-native tooling only (Delta Lake, DLT pipelines, PySpark jobs, Databricks Workflows). For the dbt-integrated version of these patterns, see [`../../../databricks_and_dbt/performance/performance_patterns.md`](../../../databricks_and_dbt/performance/performance_patterns.md).
+> **Native Databricks version.** This document covers performance tuning patterns using Databricks-native tooling only (Delta Lake, SDP pipelines, PySpark jobs, Databricks Workflows). For the dbt-integrated version of these patterns, see [`../../../databricks_and_dbt/performance/performance_patterns.md`](../../../databricks_and_dbt/performance/performance_patterns.md).
 
 ---
 
@@ -98,11 +98,11 @@ The distinction is not merely a UI preference — the two surfaces have differen
 **Use a Spark Cluster when:**
 
 - Running ETL jobs written in PySpark, Scala, or Java
-- Running streaming pipelines (Structured Streaming or Delta Live Tables)
+- Running streaming pipelines (Structured Streaming or Lakeflow Spark Declarative Pipelines)
 - Executing machine learning training or inference workloads
 - Running notebooks interactively with PySpark code
 - Orchestrating workflows with the Databricks Jobs API that require a long-running driver process
-- Running Delta Live Tables (DLT) pipelines — DLT runs on clusters managed by the DLT runtime
+- Running Lakeflow Spark Declarative Pipelines (SDP) — SDP runs on clusters managed by the SDP runtime
 
 **Use a SQL Warehouse when:**
 
@@ -133,7 +133,7 @@ The distinction is not merely a UI preference — the two surfaces have differen
 - [SQL Warehouses — Databricks Documentation](https://docs.databricks.com/en/compute/sql-warehouse/index.html)
 - [Serverless SQL Warehouses — Databricks Documentation](https://docs.databricks.com/en/compute/sql-warehouse/serverless.html)
 - [Cluster Configuration — Databricks Documentation](https://docs.databricks.com/en/compute/configure.html)
-- [Delta Live Tables — Databricks Documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [Lakeflow Spark Declarative Pipelines — Databricks Documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
 - [Performance Cookbook — Cluster Sizing and Autoscaling](./performance_cookbook.md)
 
 ---
@@ -166,13 +166,13 @@ pit JOIN sat_1 ON pit.sat_1_load_date JOIN sat_2 ON pit.sat_2_load_date JOIN ...
 
 The number of joins is the same, but each satellite join is now an equality join on `hash_key + LOAD_DATE` — a key lookup rather than a range scan with a subquery. This is dramatically more efficient for the query engine to plan and execute.
 
-In native Databricks pipelines, PIT tables are built and refreshed via PySpark MERGE or INSERT OVERWRITE jobs scheduled in Databricks Workflows, or as DLT tables in the gold/business-vault layer.
+In native Databricks pipelines, PIT tables are built and refreshed via PySpark MERGE or INSERT OVERWRITE jobs scheduled in Databricks Workflows, or as SDP tables in the gold/business-vault layer.
 
 **Bridge Tables**
 
 Bridge tables serve a similar purpose for multi-hop link traversals. In a vault model, following a chain of relationships (e.g., Order -> Order Line -> Product -> Product Category) requires joining through multiple link tables. A Bridge table pre-computes the full traversal path and stores it as a flat lookup table, eliminating the multi-hop join at query time.
 
-In a native Databricks architecture, bridge tables are written by PySpark jobs that execute the multi-hop join once per load cycle and write the result to a Delta table. The DLT pipeline equivalent is a materialized DLT table in the business vault or gold layer.
+In a native Databricks architecture, bridge tables are written by PySpark jobs that execute the multi-hop join once per load cycle and write the result to a Delta table. The SDP pipeline equivalent is a materialized SDP table in the business vault or gold layer.
 
 ### When They Justify Their Overhead
 
@@ -187,14 +187,14 @@ PIT and Bridge tables are not free. They must be refreshed after every vault loa
 
 **PIT and Bridge tables are NOT justified when:**
 
-- The vault is primarily a landing zone and all reporting is done against a separate gold/mart layer that is pre-computed by PySpark jobs or DLT pipelines
+- The vault is primarily a landing zone and all reporting is done against a separate gold/mart layer that is pre-computed by PySpark jobs or SDP pipelines
 - Query volumes are low and latency requirements are not aggressive
 - The vault is still in early development and the satellite structure is likely to change — PIT tables require maintenance when satellites are added or renamed
 
 ### See Also
 
 - [Data Vault 2.0 — Dan Linstedt's Site](https://danlinstedt.com/)
-- [Delta Live Tables — Databricks Documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [Lakeflow Spark Declarative Pipelines — Databricks Documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
 - [Data Vault Cookbook](../data_vault/)
 - [Performance Cookbook — Data Vault Incremental Loading with PySpark MERGE](./performance_cookbook.md)
 

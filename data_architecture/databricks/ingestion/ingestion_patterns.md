@@ -1,7 +1,7 @@
 # Ingestion Architectural Patterns
 ## Databricks
 
-> **Scope:** This document covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, Structured Streaming, Delta Live Tables, JDBC, SFTP connector, Lakeflow Connect, and Databricks workflows.
+> **Scope:** This document covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, Structured Streaming, Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), JDBC, SFTP connector, Lakeflow Connect, and Databricks workflows.
 
 ---
 
@@ -14,6 +14,8 @@ This document is intended for data architects, senior data engineers, and techni
 ---
 
 ## Landing Zone Architecture
+
+> **Architecture diagram:** [Medallion architecture overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/lakehouse/medallion) shows how raw data flows from source systems through landing zones into Bronze, Silver, and Gold Delta tables. [ADLS Gen2 introduction — Microsoft](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction) includes a diagram of the hierarchical namespace used as a landing zone.
 
 ### What Is a Landing Zone?
 
@@ -68,6 +70,8 @@ Direct ingestion simplifies the architecture (fewer storage accounts, fewer perm
 
 ## Ingestion Method Selection
 
+> **Architecture diagram:** [Auto Loader overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/) includes a diagram comparing Auto Loader's file discovery and checkpoint mechanism against COPY INTO. [Lakeflow Connect overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) shows the managed connector architecture with Unity Catalog governance.
+
 ### Overview
 
 Databricks supports multiple ingestion methods, each suited to different latency requirements, operational models, and data volumes. Choosing the wrong method for a use case leads to avoidable operational overhead, unnecessary cost, or incorrect data. This section provides a structured comparison to guide that selection.
@@ -79,7 +83,7 @@ Databricks supports multiple ingestion methods, each suited to different latency
 | **Auto Loader** | Continuous or scheduled file arrival in cloud storage (ADLS, S3, GCS); large file volumes where checkpoint-based state tracking is important; tables that require schema evolution over time | You need sub-minute event-level latency from a message bus; files are delivered once via a one-off process |
 | **COPY INTO** | Scheduled batch loads from a known cloud storage path; scenarios where idempotency is critical and re-runs must not create duplicates; simple batch pipelines without schema evolution needs | You need schema to auto-evolve as new columns arrive; you need automatic state management without a checkpoint directory |
 | **Structured Streaming** | Sub-minute latency ingestion from Kafka, Azure Event Hubs, or Kinesis; event-driven architectures where consumer lag must be minimised; stateful aggregations with watermarking | The source is cloud storage files rather than a message bus; your team lacks the operational capability to manage streaming job recovery |
-| **Delta Live Tables (DLT)** | Managed declarative pipelines where simplicity and built-in data quality are the priority; teams that want automated retry, lineage, and observability without writing custom orchestration logic | You need fine-grained control over trigger timing or compute configuration that DLT's managed runtime does not expose; budget is constrained (DLT incurs a DBU premium) |
+| **Lakeflow Spark Declarative Pipelines (SDP)** | Managed declarative pipelines where simplicity and built-in data quality are the priority; teams that want automated retry, lineage, and observability without writing custom orchestration logic | You need fine-grained control over trigger timing or compute configuration that SDP's managed runtime does not expose; budget is constrained (SDP incurs a DBU premium) |
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
 | **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
 | **SFTP (Native Connector)** | Receiving files from partner or vendor systems that deliver via SFTP; organisations that want a managed connector without custom Python scripting | ⚠️ **Public preview as of March 2026** — not recommended for critical production workloads without validating preview stability; not suitable where the source SFTP server has connectivity restrictions incompatible with Databricks-managed egress |
@@ -90,7 +94,7 @@ Databricks supports multiple ingestion methods, each suited to different latency
 
 Auto Loader and Structured Streaming both use Spark's checkpoint mechanism, which provides exactly-once guarantees by tracking which files or offsets have been processed. This is powerful but requires that the checkpoint directory be durable (on cloud storage, not ephemeral local storage), and that it is never deleted unless you intend to reprocess from the beginning. COPY INTO tracks processed files inside the Delta table's transaction log, making it simpler to reason about — no external checkpoint directory is needed — but this also means that COPY INTO's tracking is tied to that specific Delta table and cannot be reused if the table is recreated.
 
-Delta Live Tables sits above all of these methods in the abstraction stack. It manages checkpointing, retries, and cluster lifecycle automatically. The cost of that abstraction is reduced control: DLT pipelines run on DLT-managed clusters with fixed configuration options, and trigger timing is controlled by the pipeline's continuous or triggered mode rather than by arbitrary cron logic.
+Lakeflow Spark Declarative Pipelines sits above all of these methods in the abstraction stack. It manages checkpointing, retries, and cluster lifecycle automatically. The cost of that abstraction is reduced control: SDP pipelines run on SDP-managed clusters with fixed configuration options, and trigger timing is controlled by the pipeline's continuous or triggered mode rather than by arbitrary cron logic.
 
 The Notebook Pattern has no place in production recurring ingestion. It has no state tracking, no deduplication guarantee, and no audit trail beyond the notebook run history.
 
@@ -100,7 +104,7 @@ Lakeflow Connect is the preferred choice for new SaaS ingestion implementations 
 
 - [Auto Loader documentation — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/)
 - [COPY INTO documentation — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-copy-into)
-- [Delta Live Tables overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/)
+- [Lakeflow Spark Declarative Pipelines overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/)
 - [Structured Streaming — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/)
 - [Lakeflow Connect — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/)
 - [SFTP ingestion — Azure Databricks (public preview)](https://learn.microsoft.com/en-us/azure/databricks/ingestion/sftp)
@@ -109,6 +113,8 @@ Lakeflow Connect is the preferred choice for new SaaS ingestion implementations 
 ---
 
 ## Batch vs. Streaming Trade-offs
+
+> **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) includes diagrams of the micro-batch execution model and trigger types. [Auto Loader production guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/production) shows the `availableNow` trigger lifecycle compared to continuous streaming.
 
 ### Overview
 
@@ -141,6 +147,8 @@ Continuous streaming should only be chosen when the business genuinely demands s
 
 ## Schema Evolution Strategy
 
+> **Architecture diagram:** [Auto Loader schema inference and evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/schema) diagrams the `schemaEvolutionMode` options and how `_rescued_data` captures unexpected fields. [Delta table schema evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema) illustrates `mergeSchema` and `overwriteSchema` behaviour.
+
 ### Overview
 
 Schema evolution is the process by which a data pipeline handles changes to the structure of incoming data. Handling it incorrectly leads to pipeline failures, silently dropped columns, or corrupt downstream tables. Each ingestion method has fundamentally different behaviour when schema changes occur.
@@ -152,7 +160,7 @@ Schema evolution is the process by which a data pipeline handles changes to the 
 | **Auto Loader** | Yes — configurable via `cloudFiles.schemaEvolutionMode` | `addNewColumns`: new columns added automatically. `rescue`: unexpected columns captured in `_rescued_data`. `failOnNewColumns`: pipeline fails on new column (useful for controlled environments). `none`: new columns silently dropped. |
 | **COPY INTO** | No | Columns not in the target schema are silently dropped. Missing columns are written as `null`. No automatic schema evolution. |
 | **Structured Streaming** | Limited | Unknown columns dropped by default. Schema changes after stream start cause failure unless the checkpoint is deleted and the stream restarted. |
-| **Delta Live Tables** | Yes | DLT automatically adds new columns to managed tables. Quality expectations are evaluated after schema evolution. |
+| **Lakeflow Spark Declarative Pipelines (SDP)** | Yes | SDP automatically adds new columns to managed tables. Quality expectations are evaluated after schema evolution. |
 | **Notebook Pattern** | Manual | Schema must be updated manually in the notebook before the next run. |
 | **JDBC** | No automatic evolution | New source columns require a manual `ALTER TABLE ... ADD COLUMN` on the Delta target, or `mergeSchema` enabled on the write. |
 | **SFTP (Native Connector)** | Depends on format | Follows the underlying file format reader. JSON with compatible `schemaEvolutionMode` options behaves similarly to Auto Loader. CSV with inferred schema may fail on new columns. |

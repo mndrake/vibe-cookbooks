@@ -2,7 +2,7 @@
 
 ## Databricks
 
-> **Scope:** This document covers performance tuning patterns using Databricks-native tooling only (Delta Lake, DLT pipelines, PySpark jobs, Databricks Workflows).
+> **Scope:** This document covers performance tuning patterns using Databricks-native tooling only (Delta Lake, SDP pipelines, PySpark jobs, Databricks Workflows).
 
 ---
 
@@ -98,11 +98,11 @@ The distinction is not merely a UI preference — the two surfaces have differen
 **Use a Spark Cluster when:**
 
 - Running ETL jobs written in PySpark, Scala, or Java
-- Running streaming pipelines (Structured Streaming or Delta Live Tables)
+- Running streaming pipelines (Structured Streaming or Lakeflow Spark Declarative Pipelines)
 - Executing machine learning training or inference workloads
 - Running notebooks interactively with PySpark code
 - Orchestrating workflows with the Databricks Jobs API that require a long-running driver process
-- Running Delta Live Tables (DLT) pipelines — DLT runs on clusters managed by the DLT runtime
+- Running Lakeflow Spark Declarative Pipelines (SDP) — SDP runs on clusters managed by the SDP runtime
 
 **Use a SQL Warehouse when:**
 
@@ -133,7 +133,7 @@ The distinction is not merely a UI preference — the two surfaces have differen
 - [SQL Warehouses — Databricks Documentation](https://docs.databricks.com/en/compute/sql-warehouse/index.html)
 - [Serverless SQL Warehouses — Databricks Documentation](https://docs.databricks.com/en/compute/sql-warehouse/serverless.html)
 - [Cluster Configuration — Databricks Documentation](https://docs.databricks.com/en/compute/configure.html)
-- [Delta Live Tables — Databricks Documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
+- [Lakeflow Spark Declarative Pipelines — Databricks Documentation](https://docs.databricks.com/en/delta-live-tables/index.html)
 - [Performance Cookbook — Cluster Sizing and Autoscaling](./performance_cookbook.md)
 
 ---

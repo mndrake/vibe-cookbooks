@@ -15,6 +15,8 @@ This document is intended for data architects, senior data engineers, and techni
 
 ## Landing Zone Architecture
 
+> **Architecture diagram:** [Medallion architecture overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/lakehouse/medallion) shows how raw data flows from source systems through landing zones into Bronze, Silver, and Gold Delta tables. [ADLS Gen2 introduction — Microsoft](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction) includes a diagram of the hierarchical namespace used as a landing zone.
+
 ### What Is a Landing Zone?
 
 A landing zone is a cloud storage location (ADLS Gen2, S3, or GCS) where raw data files are deposited by upstream systems before Databricks reads them. Databricks does not control how data arrives in the landing zone — that is the responsibility of the upstream system. Common upstream delivery mechanisms include:
@@ -69,6 +71,8 @@ Direct ingestion simplifies the architecture (fewer storage accounts, fewer perm
 
 ## Ingestion Method Selection
 
+> **Architecture diagram:** [Auto Loader overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/) includes a diagram comparing Auto Loader's file discovery and checkpoint mechanism against COPY INTO. [Lakeflow Connect overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) shows the managed connector architecture with Unity Catalog governance.
+
 ### Overview
 
 Databricks supports multiple ingestion methods, each suited to different latency requirements, operational models, and data volumes. Choosing the wrong method for a use case leads to avoidable operational overhead, unnecessary cost, or incorrect data. This section provides a structured comparison to guide that selection.
@@ -111,6 +115,8 @@ Lakeflow Connect is the preferred choice for new SaaS ingestion implementations 
 
 ## Batch vs. Streaming Trade-offs
 
+> **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) includes diagrams of the micro-batch execution model and trigger types. [Auto Loader production guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/production) shows the `availableNow` trigger lifecycle compared to continuous streaming.
+
 ### Overview
 
 The choice between batch and streaming ingestion is one of the most consequential architectural decisions in a data platform. It affects latency, cost, operational complexity, and failure recovery behaviour.
@@ -141,6 +147,8 @@ Continuous streaming should only be chosen when the business genuinely demands s
 ---
 
 ## Schema Evolution Strategy
+
+> **Architecture diagram:** [Auto Loader schema inference and evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/schema) diagrams the `schemaEvolutionMode` options and how `_rescued_data` captures unexpected fields. [Delta table schema evolution — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta/update-schema) illustrates `mergeSchema` and `overwriteSchema` behaviour.
 
 ### Overview
 
@@ -181,7 +189,7 @@ For Data Vault 2.0 pipelines using native PySpark/SQL staging (see below), hash 
 
 In a Data Vault 2.0 architecture, the staging layer prepares raw source data for vault loading by deriving the surrogate keys (hash keys) and change-detection hashes (hashdiffs) that Data Vault structures depend on. On the native Databricks stack, this is implemented directly in PySpark or Spark SQL using the built-in `MD5()`, `SHA2()`, `CONCAT_WS()`, and `COALESCE()` functions — no external macro library is required.
 
-The staging layer is typically implemented as a Delta Live Tables pipeline (for managed, observable staging) or as a PySpark job / SQL view (for lighter-weight implementations). The design considerations are identical to the dbt/AutomateDV approach — only the implementation mechanism differs.
+The staging layer is typically implemented as a Lakeflow Spark Declarative Pipelines pipeline (for managed, observable staging) or as a PySpark job / SQL view (for lighter-weight implementations). The design considerations are identical to the dbt/AutomateDV approach — only the implementation mechanism differs.
 
 ### Design Considerations
 
@@ -193,11 +201,11 @@ The staging layer is typically implemented as a Delta Live Tables pipeline (for 
 
 **Hashdiff column scope.** A hashdiff column is a hash of all descriptive (non-key) attribute columns in a satellite source. The columns included in the hashdiff must match exactly the columns loaded into that satellite. Adding or removing a column from the hashdiff definition after the satellite has been populated will cause every existing record to re-evaluate as changed on the next load.
 
-**Implementation as a DLT view.** The staging layer should be implemented as a DLT streaming view (`@dlt.view`) rather than a materialized table where possible, as staging is a transformation step, not a persistence layer. This avoids unnecessary storage duplication and keeps lineage clean.
+**Implementation as an SDP view.** The staging layer should be implemented as an SDP streaming view (`@dlt.view`) rather than a materialized table where possible, as staging is a transformation step, not a persistence layer. This avoids unnecessary storage duplication and keeps lineage clean.
 
 ### See Also
 
-- [Delta Live Tables Python API — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/python-ref)
+- [Lakeflow Spark Declarative Pipelines Python API — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/python-ref)
 - [MD5 function — Databricks SQL](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/md5)
 - [SHA2 function — Databricks SQL](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/sha2)
 - `ingestion_cookbook.md` — Native Data Vault Staging implementation examples
