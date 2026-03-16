@@ -109,16 +109,11 @@ See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/
 
 ### Databricks Secrets
 
-All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...")`.
+All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...")`. Never hardcode credentials in notebooks or job scripts.
 
-> **Azure Key Vault-backed secret scopes** are appropriate when: credentials are rotated centrally by a secrets management team and you do not want to update Databricks scope values on each rotation; or when Key Vault access policies are the authoritative access control mechanism for your organisation. Create an AKV-backed scope via the Databricks UI: **Settings → Developer → Manage secret scopes → Create** and provide your Key Vault DNS name and resource ID. See [Azure Key Vault-backed secret scopes — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secret-scopes#azure-key-vault-backed-scopes) for the full setup guide.
->
-> **Databricks-managed scopes** (shown in the CLI example below) are appropriate when Key Vault is not available or when the additional Azure resource and access policy management overhead is not justified. The `dbutils.secrets.get()` call is identical regardless of scope backend.
->
-> **Granting access:** A job running under a service principal must have `READ` permission on the secret scope to call `dbutils.secrets.get()`. Grant it with: `databricks secrets put-acl --scope <scope-name> --principal <service-principal-name> --permission READ`. Without this, the job fails with a permission denied error at runtime, not at deployment time. See the permissions section of the Databricks Secrets documentation linked below.
+Create the secret scopes referenced in this cookbook before running the examples:
 
 ```bash
-# Databricks-managed scope fallback (use AKV-backed scopes in production)
 databricks secrets create-scope --scope jdbc-secrets
 databricks secrets create-scope --scope eventhubs-secrets
 
@@ -127,7 +122,7 @@ databricks secrets put-secret --scope jdbc-secrets --key sql-user
 databricks secrets put-secret --scope jdbc-secrets --key sql-password
 ```
 
-See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secrets) for full documentation including permissions management.
+See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secrets) for full setup guidance, including Azure Key Vault-backed scopes, scope ACL grants, and service principal access configuration.
 
 ---
 
