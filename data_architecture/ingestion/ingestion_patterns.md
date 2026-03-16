@@ -82,7 +82,7 @@ Databricks supports multiple ingestion methods, each suited to different latency
 | **Structured Streaming** | Sub-minute latency ingestion from Kafka, Azure Event Hubs, or Kinesis; event-driven architectures where consumer lag must be minimised; stateful aggregations with watermarking | The source is cloud storage files rather than a message bus; your team lacks the operational capability to manage streaming job recovery |
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
 | **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
-| **Lakeflow Connect** | Managed ingestion from SaaS applications and databases where building a custom connector is not justified; teams that want a fully native Databricks-managed pipeline with Unity Catalog governance and serverless compute. GA as of March 2026: Salesforce, Workday, SQL Server. See the [connector catalogue](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list including preview connectors. | Sources not yet on the Lakeflow Connect connector catalogue; organisations with strict data residency requirements that need careful evaluation of data paths |
+| **Lakeflow Connect** | SaaS or database sources covered by the GA connector catalogue, where reducing the operational surface of the ingestion pipeline is prioritised over cost optimisation for low-volume syncs. GA as of March 2026: Salesforce, Workday, SQL Server. See the [connector catalogue](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list including preview connectors. | Sources not yet on the Lakeflow Connect connector catalogue; organisations with strict data residency requirements that need careful evaluation of data paths; low-volume, low-frequency syncs where serverless compute cost exceeds the cost of an equivalent JDBC or file-based pipeline |
 
 ### Trade-offs
 
@@ -196,7 +196,7 @@ Increasing `numPartitions` improves throughput on the Databricks side but places
 
 ### Overview
 
-Managed ingestion patterns handle extraction from source systems via a connector service. On the native Databricks stack, **Lakeflow Connect** runs on serverless compute within Databricks, is governed by Unity Catalog, and does not require data to transit third-party infrastructure. For sources covered by the connector catalogue, this eliminates the need to build or host a custom connector.
+Managed ingestion patterns handle extraction from source systems via a connector service. On the native Databricks stack, **Lakeflow Connect** runs on serverless compute within Databricks and is governed by Unity Catalog. For sources covered by the connector catalogue, Lakeflow Connect provides a managed connector that runs on Databricks serverless compute. Teams that would otherwise use a third-party connector tool or build a custom integration should evaluate Lakeflow Connect against those alternatives based on connector coverage, cost, and operational model.
 
 ### Lakeflow Connect
 

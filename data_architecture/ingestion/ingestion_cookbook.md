@@ -46,7 +46,7 @@ All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or lat
 | Scenario | Recommended Configuration |
 |----------|--------------------------|
 | Auto Loader / JDBC batch jobs | Job cluster, auto-terminate after job; start with 2–4 workers, scale based on actual throughput |
-| Structured Streaming (continuous) | Job cluster with auto-scaling, or a Databricks Continuous Job; always-on incurs continuous cost |
+| Structured Streaming (continuous) | Job cluster with auto-scaling, or a [Databricks Continuous Job](https://learn.microsoft.com/en-us/azure/databricks/jobs/create-run-jobs#continuous-job) (a job configured to restart automatically when the run terminates — distinct from a standard job task); always-on incurs continuous cost |
 | JDBC with `numPartitions = 8` | At least 4 workers so partitions distribute across executors; single-node clusters will serialise reads |
 | One-off loads / development | All-purpose cluster; not recommended for production recurring jobs due to cost and contention |
 
@@ -140,7 +140,7 @@ See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/
 
 > **Architecture diagram:** [Auto Loader overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/) includes diagrams of the checkpoint-based file tracking mechanism and the difference between directory listing and file notification discovery modes.
 
-Auto Loader (`cloudFiles` format) incrementally ingests files from cloud storage (ADLS Gen2, S3, GCS) into Delta Lake. It records processed files in a checkpoint directory on durable storage. On each trigger, it reads files not yet recorded in the checkpoint and writes them to Delta in a transactional commit. Each file is processed once provided the checkpoint is intact and the Delta write completes. If the checkpoint is deleted, Auto Loader reprocesses all files from the source path on the next run.
+Auto Loader (`cloudFiles` format) incrementally ingests files from cloud storage (ADLS Gen2, S3, GCS) into Delta Lake. It records processed files in a checkpoint directory on durable storage. On each trigger, it reads files not yet recorded in the checkpoint and writes them to Delta in a transactional commit. Each file is processed once provided the checkpoint is intact and the Delta write completes. If the checkpoint is deleted, Auto Loader reprocesses all files from the source path on the next run — in append-mode pipelines (the default), this reprocessing inserts duplicate rows into the target Delta table. Auto Loader has no built-in deduplication on reprocessing; if a checkpoint is lost and the pipeline runs in append mode, deduplicate the target table manually using `MERGE` or `ROW_NUMBER()` before the pipeline resumes normal operation.
 
 #### Problem
 
@@ -194,6 +194,7 @@ LIMIT 10;
 #### Discussion and Concerns
 
 - **Checkpoint durability:** The checkpoint directory must be on durable cloud storage. Deleting it causes Auto Loader to reprocess all files from the beginning.
+- **`schemaLocation`:** Auto Loader uses `schemaLocation` to store the schema it infers from the source files — this is separate from the checkpoint directory (which tracks which files have been processed). They are co-located in the example (`checkpoint_path + "/schema"`) for convenience, but they serve different functions. If you change `checkpoint_path` for a different table, update `schemaLocation` to match — pointing two Auto Loader streams at the same `schemaLocation` will cause them to share schema state, which leads to incorrect schema inference. If the schema location is corrupted or contains a stale schema, delete only the `schemaLocation` subdirectory (not the full checkpoint directory) and let Auto Loader re-infer the schema from the source files on the next run. Deleting only the schema location resets schema inference without resetting file tracking state.
 - **`schemaEvolutionMode` choices:** `addNewColumns` for bronze ingestion where all source columns must be captured. `failOnNewColumns` for silver/gold tables where schema drift should trigger investigation. `rescue` for highly variable sources. **`none` silently drops any column in the source file that is not already in the inferred schema** — do not use `none` unless you have a separate mechanism to validate that no new columns exist before each run, or you will lose data without an error.
 - **`trigger(availableNow=True)` vs. `trigger(once=True)`:** `availableNow=True` is the modern replacement for the deprecated `once=True`. Use `availableNow=True` for all new pipelines. `trigger(once=True)` processes a single micro-batch and then stops, which may leave unprocessed files if more than one batch of data has arrived; this is the main reason it was replaced.
 - **Target table creation:** `.toTable("main.bronze.orders")` creates the Delta table automatically on first run if it does not exist, provided the executing principal has `CREATE TABLE` on the target schema. No `CREATE TABLE` DDL is required before the first run.
@@ -242,7 +243,7 @@ spark.sql("""
     FILEFORMAT = CSV
     FORMAT_OPTIONS (
         'header' = 'true',
-        'inferSchema' = 'true',
+        'inferSchema' = 'false',
         'delimiter' = ','
     )
     COPY_OPTIONS (
@@ -260,7 +261,7 @@ FROM 'abfss://raw@mystorageaccount.dfs.core.windows.net/sales/2026/03/'
 FILEFORMAT = CSV
 FORMAT_OPTIONS (
   'header'       = 'true',
-  'inferSchema'  = 'true',
+  'inferSchema'  = 'false',
   'delimiter'    = ','
 )
 COPY_OPTIONS (
@@ -281,7 +282,7 @@ FROM main.bronze.sales_transactions;
 - **Directory scanning is not recursive:** COPY INTO reads files at the exact path specified. It does **not** recurse into subdirectories. If files are organized under date-partitioned subdirectories (e.g., `sales/2026/03/15/`, `sales/2026/03/16/`), point COPY INTO at each subdirectory explicitly, or use Auto Loader which supports recursive path scanning via glob patterns in the source path (e.g., `abfss://raw@.../sales/2026/03/**/*.csv`).
 - **`badRecordsPath`:** Routes malformed rows to a separate storage path rather than aborting the entire load. Without it, a single corrupt record fails the full COPY INTO command. Point `badRecordsPath` to a container **outside** the source data hierarchy (e.g., an `ops` container) to avoid COPY INTO attempting to re-ingest the bad record files on subsequent runs. Monitor the bad records path as part of pipeline health checks.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
-- **`inferSchema = 'true'` for bronze CSV:** Schema inference is acceptable at the bronze layer when column types are not known in advance — for example, raw CSV files from an external partner. For tables with fixed, known column types, always define the DDL explicitly and omit `inferSchema`.
+- **`inferSchema` and pre-defined DDL:** When `inferSchema = 'true'` is set on a COPY INTO command targeting a table with an existing schema, COPY INTO infers types from the source file and attempts to cast them to the target column types at write time. This can cause errors or silent coercion — for example, if a CSV `sale_date` column is inferred as `STRING` but the target DDL defines it as `DATE`. For tables where the DDL already defines the target schema, set `inferSchema = 'false'`: COPY INTO reads all CSV values as strings and the Delta writer handles casting to the target column types, producing a predictable and explicit type mapping. Use `inferSchema = 'true'` only when creating a new table without a pre-defined DDL and when accepting inferred column types at the bronze layer is explicitly intended.
 
 #### See Also
 
@@ -316,7 +317,12 @@ connection_string = dbutils.secrets.get(scope="eventhubs-secrets", key="connecti
 eh_conf = {
     "eventhubs.connectionString": sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(
         connection_string
-    )
+    ),
+    # Use a dedicated consumer group for each Spark job reading from this Event Hub.
+    # The $Default group is shared by all consumers that do not specify one — two jobs
+    # using $Default compete for partitions and one will silently receive zero events.
+    # Create the consumer group in the Azure portal or via CLI before running this job.
+    "eventhubs.consumerGroup": "orders-bronze-loader",
 }
 checkpoint_path = "abfss://checkpoints@mystorageaccount.dfs.core.windows.net/orders_stream"
 order_schema = "order_id STRING, customer_id STRING, order_total DOUBLE, order_date TIMESTAMP"
@@ -358,6 +364,7 @@ ORDER BY 1 DESC;
 #### Discussion and Concerns
 
 - **Checkpoint location:** Store checkpoints on durable cloud storage. Deleting the checkpoint causes the stream to restart from the beginning of the Event Hub retention window.
+- **Consumer groups:** Event Hubs assigns partition ownership per consumer group. If two Spark jobs read from the same Event Hub without specifying a consumer group, both default to `$Default` and compete for partitions — the result is that one job receives no events with no error raised. Use a dedicated consumer group per Spark job (`eventhubs.consumerGroup` in `eh_conf`). Create the consumer group in the Azure portal (**Event Hubs namespace → your Event Hub → Consumer groups**) before starting the stream.
 - **`sc._jvm` and the encryption call:** `sc` is the `SparkContext`, automatically available in Databricks notebooks. The `sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(...)` call is a Py4J bridge into the Java library — it is required because the Event Hubs connector expects the connection string in encrypted form. This call is only available in Databricks notebook and job cluster environments where the Event Hubs library is installed; it will raise a `NameError` in standalone Python scripts that do not have `sc` pre-initialised.
 - **Stream lifecycle — Job vs. notebook:** `trigger(availableNow=True)` (used in the code above) processes all available Event Hub partitions and then terminates — the correct choice for Databricks Jobs where each task must terminate for the job to complete. Use `trigger(processingTime="1 minute")` only when running in a long-running notebook or a Databricks Workflows **Continuous Job** — this trigger starts a stream that never terminates on its own. To stop a running stream gracefully from a notebook: `query = stream.start(); query.awaitTermination(); query.stop()`.
 - **`from_json` and malformed messages:** `from_json` returns `null` for all fields when a message body does not match the declared schema (wrong field types, malformed JSON, encoding issues) — it does not raise an error. Monitor for rows where `order_id IS NULL` in the bronze table to detect schema mismatches or upstream message format changes. When null rows appear, retain them in the bronze table for investigation (do not delete — they are evidence of upstream drift), alert the pipeline owner, and resolve by either updating `order_schema` to match the new source format or coordinating with the upstream producer to fix the message structure. **Updating `order_schema` is a code change** — the variable is a string literal in the notebook or job script. For `trigger(availableNow=True)` jobs, deploy the updated code and the next scheduled run picks up the new schema. For `trigger(processingTime=...)` continuous streams, the running stream must be stopped first (the in-memory schema is fixed at stream start), the code updated, and the stream restarted; the existing checkpoint remains valid provided only new columns are added or column types are widened.
@@ -475,11 +482,11 @@ LIMIT 20;
 
 - **Parallel reads increase source load:** 8 partitions = 8 concurrent connections. Use a read replica where available.
 - **Partition bounds:** `lowerBound` and `upperBound` define how Spark splits the read into `numPartitions` parallel range queries — they do not filter rows. Setting them to values far outside the actual data range produces heavily skewed partitions. The example above queries the actual `MIN`/`MAX` before each load to keep partitions balanced.
-- **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load.
+- **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load. **First-run partial failure produces a permanent data gap:** if the full load fails partway through (timeout, network drop, source connection error), the target table contains partial data with a non-null `MAX(updated_at)`. The next run picks up from that watermark — any source rows with `updated_at` earlier than the partial load's maximum are permanently skipped. If a first full load fails, truncate the target table before restarting: `TRUNCATE TABLE main.bronze.orders`. This forces the fallback to `1900-01-01` and triggers a clean full load on the next run.
 - **Full extract (overwrite):** For tables that must be fully refreshed each run (no reliable watermark column, or the table is small enough to reload in full), replace the MERGE block with: `df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("main.bronze.orders")`. **Do not use MERGE for a full-refresh pattern** — MERGE on a full load leaves rows in the target that were deleted from the source, because MERGE only acts on matched and unmatched rows from the source; rows in the target with no matching source row are untouched by default.
 - **MERGE cardinality:** Delta raises a `MERGE_CARDINALITY_VIOLATION` error if the MERGE `ON` condition matches multiple target rows to a single source row. This happens when `partitionColumn` is not a unique key of the source table. Verify that the column used in `t.order_id = s.order_id` is a unique key before using it as both the partition column and the merge key.
 - **Hard deletes are invisible:** Incremental JDBC based on `updated_at` will not detect deleted rows. Use a CDC tool (Debezium) if delete propagation is required.
-- **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL, install the `org.postgresql:postgresql:<version>` Maven library via the cluster Libraries tab (e.g., `org.postgresql:postgresql:42.7.3` for a DBR 14.x cluster — check the [PostgreSQL JDBC driver releases](https://jdbc.postgresql.org/download/) for the latest version compatible with your JVM). For MySQL, install `com.mysql:mysql-connector-j:<version>` (e.g., `com.mysql:mysql-connector-j:9.1.0`).
+- **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL, install the `org.postgresql:postgresql:<version>` Maven library via the cluster Libraries tab (e.g., `org.postgresql:postgresql:42.7.3` for a DBR 14.x cluster — check the [PostgreSQL JDBC driver releases](https://jdbc.postgresql.org/download/) for the latest version compatible with your JVM). For MySQL, install `com.mysql:mysql-connector-j:<version>` (e.g., `com.mysql:mysql-connector-j:9.1.0`). **Installing a library on a running cluster requires a cluster restart before the library is available to the JVM.** If you install the driver and run the notebook immediately without restarting, the job will fail with `ClassNotFoundException` for the driver class — not a connection error.
 - **`query` and `partitionColumn` interaction:** When `query` is specified alongside `partitionColumn`, Spark wraps the query as a subquery for each partition: `SELECT * FROM (<your query>) WHERE order_id BETWEEN <lower> AND <upper>`. SQL Server handles this correctly. If your JDBC driver does not support subquery wrapping, remove the `query` option and use `.option("dbtable", "dbo.orders")` combined with a database view that applies the filter, or remove the partition options and accept a single-partition sequential read.
 
 #### See Also
@@ -499,7 +506,7 @@ Lakeflow Connect provides Databricks-native managed connectors for SaaS applicat
 
 #### Problem
 
-The data platform must ingest data from Salesforce without building or maintaining a custom API connector, and without source data transiting third-party infrastructure.
+The data platform must ingest data from Salesforce into Delta Lake on a recurring schedule. Available options include Salesforce Data Export to a landing zone with Auto Loader, a third-party connector tool, or Lakeflow Connect. This section covers the Lakeflow Connect implementation.
 
 #### Solution
 
@@ -519,10 +526,17 @@ Create a Lakeflow Connect pipeline for Salesforce. The connector handles increme
 # Grant the pipeline service principal access to the destination schema.
 # Run once by a Unity Catalog admin after provisioning the pipeline.
 #
+# IMPORTANT: Run these grants only after confirming the pipeline was successfully
+# provisioned. Databricks creates the pipeline service principal at provisioning
+# time — if the pipeline failed to provision, the service principal may not exist.
+# Grants against a nonexistent principal succeed silently but have no effect,
+# making the subsequent runtime permission error difficult to diagnose.
+#
 # To find the actual service principal name: Databricks UI → Settings →
 # Identity and access → Service principals, and look for the principal
-# created when the Lakeflow Connect pipeline was provisioned. Replace
-# "lakeflow-pipeline-sp" below with the actual principal name or application ID.
+# created when the Lakeflow Connect pipeline was provisioned. Verify it appears
+# in the list before running the grants below. Replace "lakeflow-pipeline-sp"
+# with the actual principal name or application ID shown in the UI.
 
 pipeline_sp = "lakeflow-pipeline-sp"  # replace with the actual service principal name
 
@@ -570,10 +584,11 @@ ORDER BY 1 DESC;
 
 #### Discussion and Concerns
 
-- **Connector catalogue:** GA for Salesforce, Workday, SQL Server as of March 2026. Check [documentation](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list.
+- **Connector catalogue:** GA for Salesforce, Workday, SQL Server as of March 2026. Additional connectors are available in public preview. Check [documentation](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list. **Preview connectors should not be used for production workloads without evaluating the risk:** connector API contracts, schema behaviour, and authentication mechanisms may change between preview and GA without notice; Databricks may alter or remove a preview connector; and if a connector is discontinued, the replacement migration path may require rebuilding the ingestion pipeline from scratch. For production use, confirm the connector is GA and review the release notes for schema or API changes at each Databricks platform version update.
 - **Unity Catalog required:** Lakeflow Connect requires Unity Catalog — not available with the legacy Hive metastore.
 - **Schema evolution:** New columns automatically added. Deleted source columns retained in Delta with `null` values — filter downstream as needed. Column renames in the source produce a new column in Delta; the prior column persists with its historical values. Downstream pipelines must account for both the old and new column names after a rename.
 - **Asset Bundles CI/CD:** Define pipelines in `databricks.yml` and deploy via the Databricks CLI for source control and environment promotion.
+- **Cost:** Lakeflow Connect is billed at the Databricks serverless DBU rate based on compute time, not per row ingested. For low-volume, low-frequency syncs, the per-trigger compute overhead can exceed the cost of an equivalent JDBC job — evaluate against your sync frequency, data volume, and the operational overhead each approach requires. See `ingestion_patterns.md` for the full cost trade-off discussion.
 
 #### See Also
 
@@ -585,7 +600,7 @@ ORDER BY 1 DESC;
 
 ## Sources Not Covered in This Cookbook
 
-Some source systems — ERP platforms, proprietary databases, on-premises applications, mainframes, custom APIs — do not have a native Databricks connector and are not covered by Lakeflow Connect. The standard pattern for these sources is a **landing zone approach**:
+Some source systems — ERP platforms, proprietary databases, on-premises applications, mainframes, custom APIs — do not have a native Databricks connector and are not covered by Lakeflow Connect. A common pattern for these sources is a **landing zone approach**. If the source exposes a JDBC endpoint, direct database ingestion (see the [JDBC section](#database-ingestion--jdbc) above) may also apply — evaluate based on source connectivity, data volume, and whether a raw file audit trail is required.
 
 1. An external orchestration tool extracts data from the source and writes it as files (CSV, JSON, Parquet, or Avro) to a cloud storage landing zone (ADLS Gen2 container, S3 prefix, or GCS bucket). Azure Data Factory (ADF) is the most common tool on Azure; AWS Glue and Informatica are common alternatives.
 2. Databricks reads the files from the landing zone using **Auto Loader** (for ongoing incremental file arrival) or **COPY INTO** (for scheduled batch loads). All patterns in the [File Ingestion](#file-ingestion) section apply directly.
