@@ -24,34 +24,6 @@ This cookbook provides practical, step-by-step guidance for data ingestion on Da
 
 ---
 
-## Infrastructure Prerequisites
-
-Before running any example in this cookbook, ensure the following infrastructure is in place. These are one-time setup tasks typically performed by a workspace admin.
-
-### Databricks Runtime Version
-
-All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or later**. Specific minimum version requirements:
-
-| Feature | Minimum DBR |
-|---------|-------------|
-| Auto Loader `schemaEvolutionMode`, `trigger(availableNow=True)` | 11.3 LTS |
-| Liquid Clustering | 13.3 LTS |
-
-**Recommendation:** Use **DBR 14.3 LTS or later** for new workloads — it is the current long-term support release as of March 2026 and includes all features referenced in this cookbook.
-
-### Cluster Configuration
-
-| Scenario | Recommended Configuration |
-|----------|--------------------------|
-| Auto Loader / JDBC batch jobs | Job cluster, auto-terminate after job; start with 2–4 workers, scale based on actual throughput |
-| Structured Streaming (continuous) | Job cluster with auto-scaling, or a [Databricks Continuous Job](https://learn.microsoft.com/en-us/azure/databricks/jobs/create-run-jobs#continuous-job) (a job configured to restart automatically when the run terminates — distinct from a standard job task); always-on incurs continuous cost |
-| JDBC with `numPartitions = 8` | At least 4 workers so partitions distribute across executors; single-node clusters will serialise reads |
-| One-off loads / development | All-purpose cluster; not recommended for production recurring jobs due to cost and contention |
-
-See [Cluster configuration — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/compute/configure) for sizing guidance.
-
----
-
 ## Development Environment Pre-Requisites
 
 > **On Databricks (interactive notebooks or Asset Bundle jobs):** PySpark, Delta Lake (`delta-spark`), and `dbutils` are pre-installed with every Databricks Runtime. No `pip install` commands are needed to run the code examples in this cookbook on a Databricks cluster.
@@ -123,6 +95,34 @@ databricks secrets put-secret --scope jdbc-secrets --key sql-password
 ```
 
 See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secrets) for full setup guidance, including Azure Key Vault-backed scopes, scope ACL grants, and service principal access configuration.
+
+---
+
+## Infrastructure Prerequisites
+
+Before running any example in this cookbook, ensure the following infrastructure is in place. These are one-time setup tasks typically performed by a workspace admin.
+
+### Databricks Runtime Version
+
+All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or later**. Specific minimum version requirements:
+
+| Feature | Minimum DBR |
+|---------|-------------|
+| Auto Loader `schemaEvolutionMode`, `trigger(availableNow=True)` | 11.3 LTS |
+| Liquid Clustering | 13.3 LTS |
+
+**Recommendation:** Use **DBR 14.3 LTS or later** for new workloads — it is the current long-term support release as of March 2026 and includes all features referenced in this cookbook.
+
+### Cluster Configuration
+
+| Scenario | Recommended Configuration |
+|----------|--------------------------|
+| Auto Loader / JDBC batch jobs | Job cluster, auto-terminate after job; start with 2–4 workers, scale based on actual throughput |
+| Structured Streaming (continuous) | Job cluster with auto-scaling, or a [Databricks Continuous Job](https://learn.microsoft.com/en-us/azure/databricks/jobs/create-run-jobs#continuous-job) (a job configured to restart automatically when the run terminates — distinct from a standard job task); always-on incurs continuous cost |
+| JDBC with `numPartitions = 8` | At least 4 workers so partitions distribute across executors; single-node clusters will serialise reads |
+| One-off loads / development | All-purpose cluster; not recommended for production recurring jobs due to cost and contention |
+
+See [Cluster configuration — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/compute/configure) for sizing guidance.
 
 ---
 
