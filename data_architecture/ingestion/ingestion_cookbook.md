@@ -1,13 +1,13 @@
 # Ingestion Cookbook
 ## Databricks
 
-> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, SFTP connector, Structured Streaming, Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), JDBC, Lakeflow Connect, Partner Connectors, and native reference data loading with COPY INTO.
+> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, SFTP connector, Structured Streaming, Lakeflow Spark Declarative Pipelines (formerly Delta Live Tables / DLT), JDBC, Lakeflow Connect, and Partner Connectors.
 
 ---
 
 ## Introduction
 
-This cookbook provides practical, step-by-step guidance for data ingestion on Databricks using only the Databricks native toolchain. It covers file ingestion, streaming ingestion, database ingestion, managed ingestion, and native reference data loading.
+This cookbook provides practical, step-by-step guidance for data ingestion on Databricks using only the Databricks native toolchain. It covers file ingestion, streaming ingestion, database ingestion, and managed ingestion.
 
 The architectural rationale for choosing between methods is covered in `ingestion_patterns.md` in the same directory.
 
@@ -23,7 +23,6 @@ The architectural rationale for choosing between methods is covered in `ingestio
 | Relational database (SQL Server, PostgreSQL) | [Database Ingestion — JDBC](#database-ingestion--jdbc) |
 | SaaS application (Salesforce, Workday) | [Managed Ingestion — Lakeflow Connect](#managed-ingestion--lakeflow-connect) |
 | Third-party connector (Fivetran, Airbyte) | [Managed Ingestion — Partner Connectors](#managed-ingestion--partner-connectors-fivetran-airbyte) |
-| Reference / lookup tables | [Reference Data Loading](#reference-data-loading-native) |
 
 ---
 
@@ -269,7 +268,7 @@ FROM main.bronze.sales_transactions;
 
 - **COPY INTO vs. Auto Loader:** COPY INTO is simpler — no streaming context, no checkpoint directory, pure SQL — but does not support schema evolution. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
-- **`inferSchema = 'true'` for bronze CSV:** Schema inference is acceptable at the bronze layer when column types are not known in advance — for example, raw CSV files from an external partner. For reference tables or any table with fixed, known column types, always define the DDL explicitly and omit `inferSchema`. See the Reference Data section for an example with explicit DDL.
+- **`inferSchema = 'true'` for bronze CSV:** Schema inference is acceptable at the bronze layer when column types are not known in advance — for example, raw CSV files from an external partner. For tables with fixed, known column types, always define the DDL explicitly and omit `inferSchema`.
 
 #### See Also
 
@@ -795,91 +794,6 @@ LIMIT 50;
 
 ---
 
-## Reference Data Loading (Native)
-
-Reference data (country codes, currency codes, product status mappings) should be managed via COPY INTO from cloud storage on the native Databricks stack. This provides idempotency guarantees with better scalability and no git dependency for updates.
-
-### Reference Data — COPY INTO from Cloud Storage
-
-#### Problem
-
-A country code reference table (250 rows) must be maintained in the silver layer. The data changes at most once a year. Business analysts need to be able to update it without needing git access.
-
-#### Solution
-
-Store the reference CSV in a controlled ADLS path (version-controlled in your deployment pipeline). Use COPY INTO for idempotent loading. A scheduled Databricks Job monitors the path and reloads when a new file is detected.
-
-##### Python
-
-```python
-# Initial load or reload after file update
-spark.sql("""
-    COPY INTO main.silver.ref_country_codes
-    FROM 'abfss://reference@mystorageaccount.dfs.core.windows.net/country_codes/'
-    FILEFORMAT = CSV
-    FORMAT_OPTIONS ('header' = 'true', 'inferSchema' = 'false')
-    COPY_OPTIONS ('force' = 'false')
-""")
-
-# Use FORCE = TRUE to reload all files even if previously loaded (after a file update)
-spark.sql("""
-    COPY INTO main.silver.ref_country_codes
-    FROM 'abfss://reference@mystorageaccount.dfs.core.windows.net/country_codes/'
-    FILEFORMAT = CSV
-    FORMAT_OPTIONS ('header' = 'true', 'inferSchema' = 'false')
-    COPY_OPTIONS ('force' = 'true')
-""")
-
-# Validate
-display(spark.sql("SELECT COUNT(*) AS total_rows FROM main.silver.ref_country_codes"))
-```
-
-##### SQL
-
-```sql
--- Create the reference table with explicit column types (no schema inference for reference data)
-CREATE TABLE IF NOT EXISTS main.silver.ref_country_codes (
-    country_code VARCHAR(2)   NOT NULL,
-    country_name VARCHAR(100) NOT NULL,
-    region       VARCHAR(10)  NOT NULL,
-    is_active    BOOLEAN      NOT NULL
-)
-USING DELTA
-COMMENT 'ISO 3166 country code reference. Source: abfss://reference/country_codes/';
-
--- Load idempotently (inferSchema = 'false' — column types are defined in the DDL above)
-COPY INTO main.silver.ref_country_codes
-FROM 'abfss://reference@mystorageaccount.dfs.core.windows.net/country_codes/'
-FILEFORMAT = CSV
-FORMAT_OPTIONS ('header' = 'true', 'inferSchema' = 'false')
-COPY_OPTIONS ('force' = 'false');
-
--- Validate: check for unexpected region values
-SELECT DISTINCT region FROM main.silver.ref_country_codes;
-
--- Validate: check for nulls in key columns
-SELECT COUNT(*) AS null_codes
-FROM main.silver.ref_country_codes
-WHERE country_code IS NULL OR country_name IS NULL;
-
--- View change history via Delta table versioning
-DESCRIBE HISTORY main.silver.ref_country_codes;
-```
-
-#### Discussion and Concerns
-
-- **Change tracking:** COPY INTO change history is visible in Delta's transaction log via `DESCRIBE HISTORY`. For a full audit trail including who uploaded the source file and when, use ADLS storage access logs and the Delta history together.
-- **`FORCE = TRUE`:** When the reference CSV is updated and re-uploaded to the same path, COPY INTO with `force = false` will not reload it (the file is already tracked). Use `force = true` when you intentionally want to reload an updated file.
-- **Schema definition:** Always define the target table DDL explicitly before the first COPY INTO load for reference data. Do not rely on `inferSchema` for tables where column types are fixed and known.
-- **Validation:** Run the SQL validation queries above as part of the Databricks Job that performs the COPY INTO. Add a notebook task after the COPY INTO task that runs assertions and fails the job if validation checks fail.
-
-#### See Also
-
-- [COPY INTO — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-copy-into)
-- [DESCRIBE HISTORY — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-describe-history)
-
----
-
 ## Managing Your Environment
 
 ### Monitoring Your Environment in Production
@@ -891,7 +805,6 @@ DESCRIBE HISTORY main.silver.ref_country_codes;
 | SDP pipeline health | Databricks UI → Lakeflow Spark Declarative Pipelines; `system.lakeflow.*` system tables | Expectation failure rates; pipelines terminating in `FAILED` state |
 | Lakeflow Connect | Databricks UI → Ingestion → Lakeflow pipelines | Pipelines not run within expected window; connector errors in event log |
 | JDBC job duration | Databricks Jobs run history | Durations trending upward — may indicate source table growth requiring `numPartitions` adjustment |
-| Reference data freshness | `DESCRIBE HISTORY main.silver.ref_country_codes` | Last `COPY INTO` operation timestamp vs. expected update cadence |
 
 ### Common Failure Patterns and Remediation
 

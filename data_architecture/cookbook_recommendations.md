@@ -7,7 +7,7 @@
 ## Folder Layout
 
 ```
-databricks/
+data_architecture/
 ├── cookbook_recommendations.md   ← this file
 ├── cookbook_template.md          ← template for new cookbooks
 │
@@ -59,7 +59,6 @@ Architecture and design reference for ingestion decisions. Read this before comm
 | Ingestion Method Selection | Compare Auto Loader, COPY INTO, Structured Streaming, JDBC, and managed connectors side by side |
 | Batch vs. Streaming Trade-offs | Choose between batch and streaming based on latency, cost, and operational complexity |
 | Schema Evolution Strategy | Decide how to handle source schema changes for each ingestion method |
-| Reference Data Loading | Load small lookup or reference tables using COPY INTO or Delta Lake patterns |
 | Database Ingestion (JDBC) | Understand watermark strategies, parallelism, and push-down optimisation for JDBC sources |
 | Managed Ingestion | Understand the trade-offs between Lakeflow Connect and third-party connectors |
 
