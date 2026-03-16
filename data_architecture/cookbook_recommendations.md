@@ -44,7 +44,6 @@ Step-by-step implementation guide for all native ingestion methods. Each method 
 | Streaming Ingestion — Structured Streaming | Consume events from Kafka, Azure Event Hubs, or Kinesis at low latency |
 | Database Ingestion — JDBC | Extract from a relational database (SQL Server, PostgreSQL, MySQL, Oracle) |
 | Managed Ingestion — Lakeflow Connect | Ingest from SaaS applications (Salesforce, Workday, ServiceNow) |
-| Managed Ingestion — Partner Connectors | Integrate Fivetran or Airbyte as the managed ingestion layer |
 
 ---
 

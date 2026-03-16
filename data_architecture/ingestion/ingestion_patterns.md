@@ -48,7 +48,6 @@ The following ingestion methods read directly from the source system without req
 |--------|-----------------------|--------|
 | **JDBC** | No | Reads directly from a relational database (SQL Server, PostgreSQL, MySQL, Oracle) |
 | **Lakeflow Connect** | No | Managed connector reads from SaaS APIs (Salesforce, Workday, etc.) and writes directly to Delta tables |
-| **Partner Connectors (Fivetran, Airbyte)** | No | Connector service reads from source and writes directly to Delta; no file staging step |
 | **Structured Streaming (Kafka/Event Hubs/Kinesis)** | No | Reads from a message broker offset — no file system staging involved |
 
 Direct ingestion simplifies the architecture (fewer storage accounts, fewer permissions, no file lifecycle management) but removes the raw file audit trail that a landing zone provides.
@@ -87,7 +86,6 @@ Databricks supports multiple ingestion methods, each suited to different latency
 | **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
 | **SFTP (Native Connector)** | Receiving files from partner or vendor systems that deliver via SFTP; organisations that want a managed connector without custom Python scripting | ⚠️ **Public preview as of March 2026** — not recommended for critical production workloads without validating preview stability; not suitable where the source SFTP server has connectivity restrictions incompatible with Databricks-managed egress |
 | **Lakeflow Connect** | Managed ingestion from SaaS applications and databases where building a custom connector is not justified; teams that want a fully native Databricks-managed pipeline with Unity Catalog governance and serverless compute. GA as of March 2026: Salesforce, Workday, SQL Server. See the [connector catalogue](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list including preview connectors. | Sources not yet on the Lakeflow Connect connector catalogue; organisations with strict data residency requirements that need careful evaluation of data paths |
-| **Partner Connectors (Fivetran, Airbyte)** | SaaS sources not yet covered by Lakeflow Connect; organisations already invested in a specific connector platform | Sources supported natively by Lakeflow Connect, where consolidating on the Databricks-native toolchain is preferred |
 
 ### Trade-offs
 
@@ -207,8 +205,6 @@ Increasing `numPartitions` improves throughput on the Databricks side but places
 
 Managed ingestion patterns handle extraction from source systems via a connector service. On the native Databricks stack, **Lakeflow Connect** is the preferred choice — it runs on serverless compute within Databricks, is governed by Unity Catalog, and does not require data to transit third-party infrastructure.
 
-**Partner connectors (Fivetran, Airbyte)** are appropriate where the source is not yet on the Lakeflow Connect catalogue or where an existing connector platform investment is in place.
-
 ### Lakeflow Connect
 
 As of March 2026, Lakeflow Connect is generally available for Salesforce, Workday, and SQL Server, with additional connectors available in preview. Key characteristics:
@@ -219,12 +215,7 @@ As of March 2026, Lakeflow Connect is generally available for Salesforce, Workda
 - CI/CD support via Databricks Asset Bundles
 - Cost model: serverless DBU consumption, not per-row fees
 
-### Partner Connectors
-
-Partner connectors (Fivetran, Airbyte) remain appropriate where the source is not on Lakeflow Connect's catalogue. Key governance consideration: source data transits the vendor's infrastructure. Obtain a Data Processing Agreement (DPA) for any personally identifiable or regulated data. Isolate connector output to a dedicated schema to limit the blast radius of the connector service principal's permissions.
-
 ### See Also
 
 - [Lakeflow Connect — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/)
-- [Databricks Partner Connect — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/partner-connect/)
-- `ingestion_cookbook.md` — Lakeflow Connect and Partner Connector implementation examples
+- `ingestion_cookbook.md` — Lakeflow Connect implementation examples

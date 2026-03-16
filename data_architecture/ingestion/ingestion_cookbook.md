@@ -1,7 +1,7 @@
 # Ingestion Cookbook
 ## Databricks
 
-> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, SFTP connector, Structured Streaming, JDBC, Lakeflow Connect, and Partner Connectors. For multi-hop pipeline orchestration using Lakeflow Spark Declarative Pipelines (SDP), see `../processing/processing_cookbook.md`.
+> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, SFTP connector, Structured Streaming, JDBC, and Lakeflow Connect. For multi-hop pipeline orchestration using Lakeflow Spark Declarative Pipelines (SDP), see `../processing/processing_cookbook.md`.
 
 ---
 
@@ -23,7 +23,6 @@ The architectural rationale for choosing between methods is covered in `ingestio
 | Kafka / Azure Event Hubs | [Streaming Ingestion — Structured Streaming](#streaming-ingestion--structured-streaming) |
 | Relational database (SQL Server, PostgreSQL) | [Database Ingestion — JDBC](#database-ingestion--jdbc) |
 | SaaS application (Salesforce, Workday) | [Managed Ingestion — Lakeflow Connect](#managed-ingestion--lakeflow-connect) |
-| Third-party connector (Fivetran, Airbyte) | [Managed Ingestion — Partner Connectors](#managed-ingestion--partner-connectors-fivetran-airbyte) |
 
 ---
 
@@ -630,66 +629,10 @@ ORDER BY 1 DESC;
 
 ---
 
-### Managed Ingestion — Partner Connectors (Fivetran, Airbyte)
-
-Partner connectors are appropriate where a source is not yet on the Lakeflow Connect catalogue or where an existing connector platform investment is in place.
-
-#### Problem
-
-The data platform needs to ingest from HubSpot, which is not yet supported by Lakeflow Connect. A managed connector with automatic schema migration and backfill is preferred.
-
-#### Solution
-
-Provision a Fivetran or Airbyte connector via Databricks Partner Connect. Grant the connector service principal Unity Catalog privileges. The connector lands data into a dedicated bronze schema.
-
-##### Python
-
-```python
-# One-time Unity Catalog setup — run as a catalog admin
-spark.sql("GRANT USE CATALOG ON CATALOG main TO `fivetran-sp@myorg.com`")
-spark.sql("GRANT USE SCHEMA ON SCHEMA main.bronze_fivetran TO `fivetran-sp@myorg.com`")
-spark.sql("GRANT CREATE TABLE ON SCHEMA main.bronze_fivetran TO `fivetran-sp@myorg.com`")
-spark.sql("GRANT MODIFY ON SCHEMA main.bronze_fivetran TO `fivetran-sp@myorg.com`")
-
-display(spark.sql("SHOW TABLES IN main.bronze_fivetran"))
-df_contacts = spark.table("main.bronze_fivetran.hubspot_contact")
-display(df_contacts.limit(10))
-```
-
-##### SQL
-
-```sql
--- Fivetran metadata columns
-SELECT
-    id,
-    email,
-    lifecycle_stage,
-    _fivetran_synced,
-    _fivetran_deleted
-FROM main.bronze_fivetran.hubspot_contact
-WHERE _fivetran_deleted = false
-ORDER BY _fivetran_synced DESC
-LIMIT 50;
-```
-
-#### Discussion and Concerns
-
-- **Provisioning via Partner Connect:** Databricks UI → Data → Partner Connect → search for Fivetran or Airbyte → Connect → follow the wizard (it provisions a service principal, SQL warehouse connection, and destination schema automatically) → complete source configuration in the partner tool's UI (enter source credentials, select tables, set sync frequency). The service principal name shown in the Partner Connect confirmation screen is the principal to grant Unity Catalog privileges (as in the Python code above).
-- **Data transits third-party infrastructure:** Assess against GDPR, HIPAA, and data residency requirements. Obtain a Data Processing Agreement (DPA) for regulated data.
-- **Isolate connector schemas:** Grant the connector principal access only to its dedicated schema.
-- **`_fivetran_deleted = true` records are retained:** Downstream silver transformations must filter `WHERE _fivetran_deleted = false`.
-- **Cost model:** Partner connector pricing (per MAR or per volume) is separate from Databricks DBU costs. Compare against Lakeflow Connect for sources where both options are available.
-
-#### See Also
-
-- [Databricks Partner Connect — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/partner-connect/)
-- [Fivetran Databricks destination](https://fivetran.com/docs/destinations/databricks)
-
----
 
 ## Sources Not Covered in This Cookbook
 
-Some source systems — ERP platforms, proprietary databases, on-premises applications, mainframes, custom APIs — do not have a native Databricks connector and are not covered by Lakeflow Connect or the major partner connectors. The standard pattern for these sources is a **landing zone approach**:
+Some source systems — ERP platforms, proprietary databases, on-premises applications, mainframes, custom APIs — do not have a native Databricks connector and are not covered by Lakeflow Connect. The standard pattern for these sources is a **landing zone approach**:
 
 1. An external orchestration tool extracts data from the source and writes it as files (CSV, JSON, Parquet, or Avro) to a cloud storage landing zone (ADLS Gen2 container, S3 prefix, or GCS bucket). Azure Data Factory (ADF) is the most common tool on Azure; AWS Glue and Informatica are common alternatives.
 2. Databricks reads the files from the landing zone using **Auto Loader** (for ongoing incremental file arrival) or **COPY INTO** (for scheduled batch loads). All patterns in the [File Ingestion](#file-ingestion) section apply directly.

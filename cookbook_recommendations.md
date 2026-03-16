@@ -66,7 +66,6 @@ data_architecture/
 | Method | Description |
 |--------|-------------|
 | Lakeflow Connect | Ingest from SaaS applications (Salesforce, Workday, SQL Server) natively on Databricks. |
-| Partner Connectors | Integrate Fivetran or Airbyte as the managed ingestion layer. |
 
 #### Ad Hoc / Interactive Ingestion
 | Method | Description |
