@@ -23,6 +23,7 @@ The architectural rationale for choosing between methods is covered in `ingestio
 | Kafka / Azure Event Hubs | [Streaming Ingestion — Structured Streaming](#streaming-ingestion--structured-streaming) |
 | Relational database (SQL Server, PostgreSQL) | [Database Ingestion — JDBC](#database-ingestion--jdbc) |
 | SaaS application (Salesforce, Workday) | [Managed Ingestion — Lakeflow Connect](#managed-ingestion--lakeflow-connect) |
+| Any other source (ERP, mainframe, on-premises, custom API) | Use ADF, Azure Glue, or another orchestration tool to land files in an ADLS Gen2 container, then apply [File Ingestion — Auto Loader](#file-ingestion--auto-loader) (continuous/incremental) or [File Ingestion — COPY INTO](#file-ingestion--copy-into) (scheduled batch). See [Sources Not Covered in This Cookbook](#sources-not-covered-in-this-cookbook). |
 
 ---
 
