@@ -92,7 +92,6 @@ All table references in this cookbook use three-part naming (`catalog.schema.tab
 CREATE SCHEMA IF NOT EXISTS main.bronze;
 CREATE SCHEMA IF NOT EXISTS main.silver;
 CREATE SCHEMA IF NOT EXISTS main.bronze_lakeflow;
-CREATE SCHEMA IF NOT EXISTS main.bronze_fivetran;
 ```
 
 See [Unity Catalog — getting started](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/get-started) for workspace enablement steps.
@@ -107,9 +106,11 @@ See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/
 
 All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...")`.
 
-> **Recommended: Azure Key Vault-backed secret scopes.** On Azure Databricks, create secret scopes backed by Azure Key Vault so that credentials are managed centrally in Key Vault and consumed transparently via `dbutils.secrets.get()`. This is the standard enterprise approach — secrets are governed by Key Vault access policies rather than per-scope ACLs in Databricks, and rotation is handled in Key Vault without changes to notebook code. Create an AKV-backed scope via the Databricks UI: **Settings → Developer → Manage secret scopes → Create** and provide your Key Vault DNS name and resource ID. See [Azure Key Vault-backed secret scopes — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secret-scopes#azure-key-vault-backed-scopes) for the full setup guide.
+> **Azure Key Vault-backed secret scopes** are appropriate when: credentials are rotated centrally by a secrets management team and you do not want to update Databricks scope values on each rotation; or when Key Vault access policies are the authoritative access control mechanism for your organisation. Create an AKV-backed scope via the Databricks UI: **Settings → Developer → Manage secret scopes → Create** and provide your Key Vault DNS name and resource ID. See [Azure Key Vault-backed secret scopes — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secret-scopes#azure-key-vault-backed-scopes) for the full setup guide.
 >
-> If Key Vault is not available, create Databricks-managed scopes using the CLI (shown below). The `dbutils.secrets.get()` call is identical regardless of scope backend.
+> **Databricks-managed scopes** (shown in the CLI example below) are appropriate when Key Vault is not available or when the additional Azure resource and access policy management overhead is not justified. The `dbutils.secrets.get()` call is identical regardless of scope backend.
+>
+> **Granting access:** A job running under a service principal must have `READ` permission on the secret scope to call `dbutils.secrets.get()`. Grant it with: `databricks secrets put-acl --scope <scope-name> --principal <service-principal-name> --permission READ`. Without this, the job fails with a permission denied error at runtime, not at deployment time. See the permissions section of the Databricks Secrets documentation linked below.
 
 ```bash
 # Databricks-managed scope fallback (use AKV-backed scopes in production)
@@ -131,7 +132,7 @@ See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/
 
 > **Architecture diagram:** [Auto Loader overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/) includes diagrams of the checkpoint-based file tracking mechanism and the difference between directory listing and file notification discovery modes.
 
-Auto Loader (`cloudFiles` format) incrementally ingests files from cloud storage (ADLS Gen2, S3, GCS) into Delta Lake. It tracks which files have been processed using a checkpoint directory, providing exactly-once delivery guarantees without manual tracking.
+Auto Loader (`cloudFiles` format) incrementally ingests files from cloud storage (ADLS Gen2, S3, GCS) into Delta Lake. It records processed files in a checkpoint directory on durable storage. On each trigger, it reads files not yet recorded in the checkpoint and writes them to Delta in a transactional commit. Each file is processed once provided the checkpoint is intact and the Delta write completes. If the checkpoint is deleted, Auto Loader reprocesses all files from the source path on the next run.
 
 #### Problem
 
@@ -185,8 +186,8 @@ LIMIT 10;
 #### Discussion and Concerns
 
 - **Checkpoint durability:** The checkpoint directory must be on durable cloud storage. Deleting it causes Auto Loader to reprocess all files from the beginning.
-- **`schemaEvolutionMode` choices:** `addNewColumns` for bronze ingestion where all source columns must be captured. `failOnNewColumns` for silver/gold tables where schema drift should trigger investigation. `rescue` for highly variable sources.
-- **`trigger(availableNow=True)` vs. `trigger(once=True)`:** `availableNow=True` is the modern replacement for the deprecated `once=True`. Use `availableNow=True` for all new pipelines.
+- **`schemaEvolutionMode` choices:** `addNewColumns` for bronze ingestion where all source columns must be captured. `failOnNewColumns` for silver/gold tables where schema drift should trigger investigation. `rescue` for highly variable sources. **`none` silently drops any column in the source file that is not already in the inferred schema** — do not use `none` unless you have a separate mechanism to validate that no new columns exist before each run, or you will lose data without an error.
+- **`trigger(availableNow=True)` vs. `trigger(once=True)`:** `availableNow=True` is the modern replacement for the deprecated `once=True`. Use `availableNow=True` for all new pipelines. `trigger(once=True)` processes a single micro-batch and then stops, which may leave unprocessed files if more than one batch of data has arrived; this is the main reason it was replaced.
 - **Target table creation:** `.toTable("main.bronze.orders")` creates the Delta table automatically on first run if it does not exist, provided the executing principal has `CREATE TABLE` on the target schema. No `CREATE TABLE` DDL is required before the first run.
 - **File discovery mode:** Auto Loader defaults to **directory listing** mode — it polls the storage path on each trigger cycle to find new files. For landing zones with thousands of files or high file-arrival frequency, consider **file notification mode**, which uses cloud storage events (Azure Event Grid / SQS) to detect new files with lower latency and reduced API costs: `.option("cloudFiles.useNotifications", "true")`. File notification mode requires a one-time setup of a storage queue resource. See [Auto Loader file detection modes](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/file-detection-modes) for setup steps.
 
@@ -237,7 +238,8 @@ spark.sql("""
         'delimiter' = ','
     )
     COPY_OPTIONS (
-        'mergeSchema' = 'false'
+        'mergeSchema'      = 'false',
+        'badRecordsPath'   = 'abfss://raw@mystorageaccount.dfs.core.windows.net/_bad_records/sales/'
     )
 """)
 ```
@@ -254,7 +256,8 @@ FORMAT_OPTIONS (
   'delimiter'    = ','
 )
 COPY_OPTIONS (
-  'mergeSchema'  = 'false'
+  'mergeSchema'     = 'false',
+  'badRecordsPath'  = 'abfss://raw@mystorageaccount.dfs.core.windows.net/_bad_records/sales/'
 );
 
 -- Validate: check row count and latest load timestamp
@@ -267,6 +270,8 @@ FROM main.bronze.sales_transactions;
 #### Discussion and Concerns
 
 - **COPY INTO vs. Auto Loader:** COPY INTO is simpler — no streaming context, no checkpoint directory, pure SQL — but does not support schema evolution. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
+- **Directory scanning is not recursive:** COPY INTO reads files at the exact path specified. It does **not** recurse into subdirectories. If files are organized under date-partitioned subdirectories (e.g., `sales/2026/03/15/`, `sales/2026/03/16/`), point COPY INTO at each subdirectory explicitly, or use Auto Loader which supports recursive path scanning via `cloudFiles.includeExistingFiles` and glob patterns.
+- **`badRecordsPath`:** Routes malformed rows to a separate storage path rather than aborting the entire load. Without it, a single corrupt record fails the full COPY INTO command. Monitor the bad records path as part of pipeline health checks.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
 - **`inferSchema = 'true'` for bronze CSV:** Schema inference is acceptable at the bronze layer when column types are not known in advance — for example, raw CSV files from an external partner. For tables with fixed, known column types, always define the DDL explicitly and omit `inferSchema`.
 
@@ -280,7 +285,9 @@ FROM main.bronze.sales_transactions;
 
 ### Streaming Ingestion — Structured Streaming
 
-Structured Streaming ingests from Kafka, Azure Event Hubs, or Amazon Kinesis with sub-minute latency and exactly-once semantics via checkpoint.
+This section covers Azure Event Hubs using the `eventhubs` Spark connector. Structured Streaming also supports Kafka (using `format("kafka")` with `kafka.bootstrap.servers` and `subscribe` options) and Amazon Kinesis (using the Kinesis connector for Databricks) — the checkpoint and Delta write patterns are the same, but the source-specific connection options differ. See [Kafka connector — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/kafka) and [Kinesis connector — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/kinesis) for those source configurations.
+
+Structured Streaming tracks the last committed source offset in a checkpoint directory. On restart, it resumes from the last committed offset. When writing to Delta Lake with a durable checkpoint, each message from Event Hubs is written to Delta once, provided the source retains messages at that offset. If the Event Hub retention window expires before the stream restarts, messages in the gap are unrecoverable. The exactly-once guarantee applies to the Spark-to-Delta write layer; it does not prevent duplicate messages produced upstream of the message bus.
 
 > **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) diagrams the micro-batch execution model, offset tracking, and checkpoint recovery. [Azure Event Hubs with Spark — Microsoft](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-spark-connector) shows the Event Hubs partition-to-Spark-partition mapping.
 
@@ -289,6 +296,8 @@ Structured Streaming ingests from Kafka, Azure Event Hubs, or Amazon Kinesis wit
 Order events are published to Azure Event Hubs at high volume and must be written to a bronze Delta table with sub-minute latency, with automatic recovery on failure.
 
 #### Solution
+
+> **Prerequisite — install the Azure Event Hubs connector:** The `eventhubs` format requires the `com.microsoft.azure:azure-eventhubs-spark_2.12:<version>` Maven library installed on the cluster before running the code below. Install it via **Compute → your cluster → Libraries → Install New → Maven**. Match the version to your Databricks Runtime's Scala version; see [azure-eventhubs-spark releases](https://github.com/Azure/azure-event-hubs-spark/releases) for the latest compatible version. Without this library, the code below fails immediately with `DataSourceNotFoundException: Failed to find data source: eventhubs`.
 
 Use `spark.readStream.format("eventhubs")` with a durable checkpoint.
 
@@ -316,7 +325,9 @@ from pyspark.sql.functions import col, from_json
     .writeStream
     .format("delta")
     .option("checkpointLocation", checkpoint_path)
-    .trigger(processingTime="1 minute")
+    # Use availableNow=True for Databricks Jobs (processes all available partitions then terminates).
+    # Use processingTime="1 minute" only in a long-running notebook or a Continuous Job — it never terminates.
+    .trigger(availableNow=True)
     .toTable("main.bronze.orders_stream")
 )
 ```
@@ -339,9 +350,9 @@ ORDER BY 1 DESC;
 #### Discussion and Concerns
 
 - **Checkpoint location:** Store checkpoints on durable cloud storage. Deleting the checkpoint causes the stream to restart from the beginning of the Event Hub retention window.
-- **Azure Event Hubs connector:** Install `com.microsoft.azure:azure-eventhubs-spark_2.12:<version>` as a Maven library via the cluster Libraries tab (Compute → your cluster → Libraries → Install New → Maven). Match the version to your Databricks Runtime's Scala version and check [azure-eventhubs-spark releases](https://github.com/Azure/azure-event-hubs-spark/releases) for the latest compatible version.
 - **`sc._jvm` and the encryption call:** `sc` is the `SparkContext`, automatically available in Databricks notebooks. The `sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(...)` call is a Py4J bridge into the Java library — it is required because the Event Hubs connector expects the connection string in encrypted form. This call is only available in Databricks notebook and job cluster environments where the Event Hubs library is installed; it will raise a `NameError` in standalone Python scripts that do not have `sc` pre-initialised.
-- **Stream lifecycle — Job vs. notebook:** `trigger(processingTime="1 minute")` starts a continuous stream that never terminates. In a **Databricks Job**, a task must terminate for the job to complete — a non-terminating stream will block the job indefinitely. Use `trigger(availableNow=True)` for job-friendly execution: it processes all available Event Hub partitions and then terminates. Use `trigger(processingTime="1 minute")` only when running in a long-running notebook or in a Databricks Workflows **Continuous Job** type. To stop a running stream gracefully from a notebook: `query = stream.start(); query.awaitTermination(); query.stop()`.
+- **Stream lifecycle — Job vs. notebook:** `trigger(availableNow=True)` (used in the code above) processes all available Event Hub partitions and then terminates — the correct choice for Databricks Jobs where each task must terminate for the job to complete. Use `trigger(processingTime="1 minute")` only when running in a long-running notebook or a Databricks Workflows **Continuous Job** — this trigger starts a stream that never terminates on its own. To stop a running stream gracefully from a notebook: `query = stream.start(); query.awaitTermination(); query.stop()`.
+- **`from_json` and malformed messages:** `from_json` returns `null` for all fields when a message body does not match the declared schema (wrong field types, malformed JSON, encoding issues) — it does not raise an error. Monitor for rows where `order_id IS NULL` in the bronze table to detect schema mismatches or upstream message format changes.
 
 #### See Also
 
@@ -457,8 +468,10 @@ LIMIT 20;
 - **Parallel reads increase source load:** 8 partitions = 8 concurrent connections. Use a read replica where available.
 - **Partition bounds:** `lowerBound` and `upperBound` define how Spark splits the read into `numPartitions` parallel range queries — they do not filter rows. Setting them to values far outside the actual data range produces heavily skewed partitions. The example above queries the actual `MIN`/`MAX` before each load to keep partitions balanced.
 - **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load.
+- **Full extract (overwrite):** For tables that must be fully refreshed each run (no reliable watermark column, or the table is small enough to reload in full), replace the MERGE block with: `df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("main.bronze.orders")`. **Do not use MERGE for a full-refresh pattern** — MERGE on a full load leaves rows in the target that were deleted from the source, because MERGE only acts on matched and unmatched rows from the source; rows in the target with no matching source row are untouched by default.
+- **MERGE cardinality:** Delta raises a `MERGE_CARDINALITY_VIOLATION` error if the MERGE `ON` condition matches multiple target rows to a single source row. This happens when `partitionColumn` is not a unique key of the source table. Verify that the column used in `t.order_id = s.order_id` is a unique key before using it as both the partition column and the merge key.
 - **Hard deletes are invisible:** Incremental JDBC based on `updated_at` will not detect deleted rows. Use a CDC tool (Debezium) if delete propagation is required.
-- **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL/MySQL, install the driver JAR via the cluster Libraries tab.
+- **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL, install the `org.postgresql:postgresql:<version>` Maven library via the cluster Libraries tab (e.g., `org.postgresql:postgresql:42.7.3` for a DBR 14.x cluster — check the [PostgreSQL JDBC driver releases](https://jdbc.postgresql.org/download/) for the latest version compatible with your JVM). For MySQL, install `com.mysql:mysql-connector-j:<version>` (e.g., `com.mysql:mysql-connector-j:9.1.0`).
 - **`query` and `partitionColumn` interaction:** When `query` is specified alongside `partitionColumn`, Spark wraps the query as a subquery for each partition: `SELECT * FROM (<your query>) WHERE order_id BETWEEN <lower> AND <upper>`. SQL Server handles this correctly. If your JDBC driver does not support subquery wrapping, remove the `query` option and use `.option("dbtable", "dbo.orders")` combined with a database view that applies the filter, or remove the partition options and accept a single-partition sequential read.
 
 #### See Also
@@ -488,18 +501,27 @@ Create a Lakeflow Connect pipeline for Salesforce. The connector handles increme
 >
 > **UI:** Databricks UI → Ingestion → Create pipeline → select Salesforce → enter your Salesforce OAuth credentials (connected app client ID, client secret, instance URL, and environment type) → select the objects to replicate → configure the destination catalog and schema → set the sync frequency.
 >
-> **Asset Bundles:** Define the pipeline in `databricks.yml` under `ingestion_pipelines:` and deploy with `databricks bundle deploy`. See [Lakeflow Connect Asset Bundles](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the YAML schema and credential configuration reference.
+> **Salesforce connected app:** A connected app is an OAuth client registered in Salesforce Setup (**Setup → App Manager → New Connected App**). Configure it with the scopes `api`, `refresh_token`, and `offline_access`. The client ID and client secret are generated by Salesforce — use these values for the OAuth credentials above. The "environment type" field distinguishes production orgs from sandbox orgs (sandbox credentials use a different token endpoint and will fail silently if the wrong type is selected).
+>
+> **Asset Bundles:** Define the pipeline in `databricks.yml` using the `pipelines:` resource key (verify the exact key against the current [Databricks Asset Bundles schema](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/reference) — the Lakeflow Connect pipeline resource key is subject to change as the feature matures) and deploy with `databricks bundle deploy`. See [Lakeflow Connect Asset Bundles](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the YAML schema and credential configuration reference.
 
 ##### Python (Databricks Asset Bundles setup)
 
 ```python
-# Grant the pipeline service principal access to the destination schema
-# Run once by a Unity Catalog admin after provisioning the pipeline
+# Grant the pipeline service principal access to the destination schema.
+# Run once by a Unity Catalog admin after provisioning the pipeline.
+#
+# To find the actual service principal name: Databricks UI → Settings →
+# Identity and access → Service principals, and look for the principal
+# created when the Lakeflow Connect pipeline was provisioned. Replace
+# "lakeflow-pipeline-sp" below with the actual principal name or application ID.
 
-spark.sql("GRANT USE CATALOG ON CATALOG main TO `lakeflow-pipeline-sp`")
-spark.sql("GRANT USE SCHEMA ON SCHEMA main.bronze_lakeflow TO `lakeflow-pipeline-sp`")
-spark.sql("GRANT CREATE TABLE ON SCHEMA main.bronze_lakeflow TO `lakeflow-pipeline-sp`")
-spark.sql("GRANT MODIFY ON SCHEMA main.bronze_lakeflow TO `lakeflow-pipeline-sp`")
+pipeline_sp = "lakeflow-pipeline-sp"  # replace with the actual service principal name
+
+spark.sql(f"GRANT USE CATALOG ON CATALOG main TO `{pipeline_sp}`")
+spark.sql(f"GRANT USE SCHEMA ON SCHEMA main.bronze_lakeflow TO `{pipeline_sp}`")
+spark.sql(f"GRANT CREATE TABLE ON SCHEMA main.bronze_lakeflow TO `{pipeline_sp}`")
+spark.sql(f"GRANT MODIFY ON SCHEMA main.bronze_lakeflow TO `{pipeline_sp}`")
 
 # Verify landed tables
 display(spark.sql("SHOW TABLES IN main.bronze_lakeflow"))
@@ -514,7 +536,11 @@ display(df_accounts.limit(10))
 ```sql
 SHOW TABLES IN main.bronze_lakeflow;
 
--- Inspect Lakeflow Connect sync metadata
+-- Inspect Lakeflow Connect sync metadata.
+-- _databricks_synced: TIMESTAMP column added by Lakeflow Connect to every replicated table.
+-- It records when Databricks committed the row to Delta Lake (not when the record changed
+-- in the source system). Use it to inspect pipeline throughput and identify sync batches.
+-- Do not use it as a proxy for source data freshness or change time.
 SELECT
     id,
     name,
@@ -583,5 +609,5 @@ For the full architectural context — when a landing zone is required vs. when 
 | COPY INTO loads zero rows after schema change | New source files have columns not in target Delta schema | `ALTER TABLE ... ADD COLUMNS (...)` then re-run COPY INTO |
 | JDBC job significantly slower | Source table growth; insufficient `numPartitions`; index fragmentation | Increase `numPartitions`; request source DBA to rebuild indexes; use read replica |
 | Lakeflow Connect authentication error | OAuth token expired or credentials rotated | Update connection credentials in Lakeflow Connect configuration |
-| Partner connector lands duplicate rows | Connector backfill triggered (e.g., after reconnection) | Deduplicate in silver using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY _fivetran_synced DESC)` |
+| Lakeflow Connect lands duplicate rows | Connector backfill triggered (e.g., after reconnection or pipeline reset) | Deduplicate in silver using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY _databricks_synced DESC)` — `_databricks_synced` is the Lakeflow Connect sync timestamp column present on all replicated tables |
 | Auto Loader / COPY INTO encounters malformed or corrupt files | Source file contains rows with unexpected types, extra fields, or corrupt encoding | For Auto Loader: set `cloudFiles.schemaEvolutionMode = 'rescue'` so unexpected fields land in `_rescued_data` rather than failing the stream. For COPY INTO: add `'badRecordsPath' = 'abfss://...'` to `COPY_OPTIONS` to route bad records to a separate path instead of aborting the load. Monitor the rescue path and bad records path as part of your pipeline health checks. |

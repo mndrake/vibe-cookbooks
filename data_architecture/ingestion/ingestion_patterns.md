@@ -86,11 +86,11 @@ Databricks supports multiple ingestion methods, each suited to different latency
 
 ### Trade-offs
 
-Auto Loader and Structured Streaming both use Spark's checkpoint mechanism, which provides exactly-once guarantees by tracking which files or offsets have been processed. This is powerful but requires that the checkpoint directory be durable (on cloud storage, not ephemeral local storage), and that it is never deleted unless you intend to reprocess from the beginning. COPY INTO tracks processed files inside the Delta table's transaction log, making it simpler to reason about — no external checkpoint directory is needed — but this also means that COPY INTO's tracking is tied to that specific Delta table and cannot be reused if the table is recreated.
+Auto Loader and Structured Streaming both use Spark's checkpoint mechanism to track which files or offsets have been processed. When writing to Delta Lake with a durable checkpoint, each file or message is written to Delta once — provided the checkpoint is intact and the Delta write completes. If the checkpoint is deleted, both Auto Loader and Structured Streaming reprocess from the beginning of the source. This requires that the checkpoint directory be durable (on cloud storage, not ephemeral local storage), and that it is never deleted unless a full reprocess is intended. COPY INTO tracks processed files inside the Delta table's transaction log, making it simpler to reason about — no external checkpoint directory is needed — but this also means that COPY INTO's tracking is tied to that specific Delta table and cannot be reused if the table is recreated.
 
-The Notebook Pattern has no place in production recurring ingestion. It has no state tracking, no deduplication guarantee, and no audit trail beyond the notebook run history.
+The Notebook Pattern reads from the source and writes to Delta without any built-in state tracking, checkpoint, or deduplication mechanism. Each run must implement its own watermark logic or will reprocess the full source. If a notebook run fails partway through, restarting it re-reads from the beginning, potentially writing duplicate rows unless the write mode is `overwrite`. It has no structured audit trail beyond the notebook run history. For a one-off or exploratory load these limitations are acceptable. For any load that must run on a schedule, be safe to restart, and produce an auditable record, use Auto Loader, COPY INTO, or Structured Streaming.
 
-Lakeflow Connect is the preferred choice for new SaaS ingestion implementations on the native Databricks stack — it runs entirely within Databricks infrastructure and integrates with Unity Catalog lineage and access control without requiring a third-party service.
+For SaaS sources covered by the Lakeflow Connect connector catalogue (Salesforce, Workday, SQL Server as of March 2026), Lakeflow Connect eliminates the need to build or host a custom connector and keeps all data within Databricks-managed infrastructure, which simplifies Unity Catalog lineage and access control. For sources not yet on the connector catalogue, for organisations with strict data residency requirements, or where the operational model requires a third-party connector tool already in use, use ADF to land files in ADLS Gen2 and apply Auto Loader. Evaluate which approach applies based on connector availability, data residency policy, and operational overhead for your team.
 
 ### See Also
 
@@ -198,7 +198,7 @@ Increasing `numPartitions` improves throughput on the Databricks side but places
 
 ### Overview
 
-Managed ingestion patterns handle extraction from source systems via a connector service. On the native Databricks stack, **Lakeflow Connect** is the preferred choice — it runs on serverless compute within Databricks, is governed by Unity Catalog, and does not require data to transit third-party infrastructure.
+Managed ingestion patterns handle extraction from source systems via a connector service. On the native Databricks stack, **Lakeflow Connect** runs on serverless compute within Databricks, is governed by Unity Catalog, and does not require data to transit third-party infrastructure. For sources covered by the connector catalogue, this eliminates the need to build or host a custom connector.
 
 ### Lakeflow Connect
 
