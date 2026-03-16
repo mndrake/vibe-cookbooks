@@ -100,6 +100,14 @@ See [Unity Catalog — getting started](https://learn.microsoft.com/en-us/azure/
 
 Every `abfss://` URI in this cookbook requires the Databricks cluster to be authorised to read from or write to the storage account. Configure access via a **Unity Catalog external location** backed by a storage credential (managed identity or service principal). This is a one-time admin task per storage account.
 
+The examples in this cookbook reference three containers on the storage account. Ensure all three exist and are covered by Unity Catalog external locations before running the examples:
+
+| Container | Purpose | Referenced By |
+|-----------|---------|---------------|
+| `raw` | Source data files (landing zone) | Auto Loader, COPY INTO |
+| `checkpoints` | Streaming and Auto Loader checkpoint state | Auto Loader, Structured Streaming |
+| `ops` | Bad records, dead-letter output | COPY INTO `badRecordsPath` |
+
 See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-external-locations-and-credentials) for setup instructions.
 
 ### Databricks Secrets
@@ -352,7 +360,7 @@ ORDER BY 1 DESC;
 - **Checkpoint location:** Store checkpoints on durable cloud storage. Deleting the checkpoint causes the stream to restart from the beginning of the Event Hub retention window.
 - **`sc._jvm` and the encryption call:** `sc` is the `SparkContext`, automatically available in Databricks notebooks. The `sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(...)` call is a Py4J bridge into the Java library — it is required because the Event Hubs connector expects the connection string in encrypted form. This call is only available in Databricks notebook and job cluster environments where the Event Hubs library is installed; it will raise a `NameError` in standalone Python scripts that do not have `sc` pre-initialised.
 - **Stream lifecycle — Job vs. notebook:** `trigger(availableNow=True)` (used in the code above) processes all available Event Hub partitions and then terminates — the correct choice for Databricks Jobs where each task must terminate for the job to complete. Use `trigger(processingTime="1 minute")` only when running in a long-running notebook or a Databricks Workflows **Continuous Job** — this trigger starts a stream that never terminates on its own. To stop a running stream gracefully from a notebook: `query = stream.start(); query.awaitTermination(); query.stop()`.
-- **`from_json` and malformed messages:** `from_json` returns `null` for all fields when a message body does not match the declared schema (wrong field types, malformed JSON, encoding issues) — it does not raise an error. Monitor for rows where `order_id IS NULL` in the bronze table to detect schema mismatches or upstream message format changes. When null rows appear, retain them in the bronze table for investigation (do not delete — they are evidence of upstream drift), alert the pipeline owner, and resolve by updating `order_schema` to match the new source format or by coordinating with the upstream producer to fix the message structure.
+- **`from_json` and malformed messages:** `from_json` returns `null` for all fields when a message body does not match the declared schema (wrong field types, malformed JSON, encoding issues) — it does not raise an error. Monitor for rows where `order_id IS NULL` in the bronze table to detect schema mismatches or upstream message format changes. When null rows appear, retain them in the bronze table for investigation (do not delete — they are evidence of upstream drift), alert the pipeline owner, and resolve by either updating `order_schema` to match the new source format or coordinating with the upstream producer to fix the message structure. **Updating `order_schema` is a code change** — the variable is a string literal in the notebook or job script. For `trigger(availableNow=True)` jobs, deploy the updated code and the next scheduled run picks up the new schema. For `trigger(processingTime=...)` continuous streams, the running stream must be stopped first (the in-memory schema is fixed at stream start), the code updated, and the stream restarted; the existing checkpoint remains valid provided only new columns are added or column types are widened.
 
 #### See Also
 
@@ -564,7 +572,7 @@ ORDER BY 1 DESC;
 
 - **Connector catalogue:** GA for Salesforce, Workday, SQL Server as of March 2026. Check [documentation](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list.
 - **Unity Catalog required:** Lakeflow Connect requires Unity Catalog — not available with the legacy Hive metastore.
-- **Schema evolution:** New columns automatically added. Deleted source columns retained in Delta with `null` values — filter downstream as needed.
+- **Schema evolution:** New columns automatically added. Deleted source columns retained in Delta with `null` values — filter downstream as needed. Column renames in the source produce a new column in Delta; the prior column persists with its historical values. Downstream pipelines must account for both the old and new column names after a rename.
 - **Asset Bundles CI/CD:** Define pipelines in `databricks.yml` and deploy via the Databricks CLI for source control and environment promotion.
 
 #### See Also
@@ -610,4 +618,4 @@ For the full architectural context — when a landing zone is required vs. when 
 | JDBC job significantly slower | Source table growth; insufficient `numPartitions`; index fragmentation | Increase `numPartitions`; request source DBA to rebuild indexes; use read replica |
 | Lakeflow Connect authentication error | OAuth token expired or credentials rotated | Update connection credentials in Lakeflow Connect configuration |
 | Lakeflow Connect lands duplicate rows | Connector backfill triggered (e.g., after reconnection or pipeline reset) | Deduplicate in silver using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY _databricks_synced DESC)` — `_databricks_synced` is the Lakeflow Connect sync timestamp column present on all replicated tables |
-| Auto Loader / COPY INTO encounters malformed or corrupt files | Source file contains rows with unexpected types, extra fields, or corrupt encoding | For Auto Loader: set `cloudFiles.schemaEvolutionMode = 'rescue'` so unexpected fields land in `_rescued_data` rather than failing the stream. For COPY INTO: add `'badRecordsPath' = 'abfss://...'` to `COPY_OPTIONS` to route bad records to a separate path instead of aborting the load. Monitor the rescue path and bad records path as part of your pipeline health checks. |
+| Auto Loader / COPY INTO encounters malformed or corrupt files | Source file contains rows with unexpected types, extra fields, or corrupt encoding | For Auto Loader: set `cloudFiles.schemaEvolutionMode = 'rescue'` so unexpected fields land in `_rescued_data` rather than failing the stream. For COPY INTO: add `'badRecordsPath' = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/<table>/'` to `COPY_OPTIONS` to route bad records to a container **outside** the source data hierarchy (e.g., an `ops` container) — placing bad records in the source container causes COPY INTO to attempt re-ingestion of those files on subsequent runs. Monitor the rescue path and bad records path as part of your pipeline health checks. |
