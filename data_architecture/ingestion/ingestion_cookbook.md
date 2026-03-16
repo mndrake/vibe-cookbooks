@@ -9,6 +9,8 @@
 
 This cookbook provides practical, step-by-step guidance for data ingestion on Databricks using only the Databricks native toolchain. It covers file ingestion, streaming ingestion, database ingestion, and managed ingestion.
 
+> **Azure Databricks does not store your data.** Databricks is a compute and orchestration platform. All table data — Delta files, transaction logs, checkpoints, and managed table data — is stored in **Azure Data Lake Storage Gen2 (ADLS Gen2)** in your own Azure subscription, under your control. Unity Catalog managed table data is written to the metastore root storage container you provision in your ADLS Gen2 account. Databricks never retains or copies your data into Databricks-managed storage. The Databricks control plane stores workspace artifacts (notebooks, job configurations, cluster settings) but not table data or data files. This is why every ingestion method in this cookbook requires an ADLS Gen2 storage account and a Unity Catalog external location to be configured before data can be written. See [Azure Databricks high-level architecture — Microsoft Learn](https://learn.microsoft.com/en-us/azure/databricks/getting-started/high-level-architecture) for the authoritative reference.
+
 The architectural rationale for choosing between methods is covered in `ingestion_patterns.md` in the same directory.
 
 **How to use this cookbook with the patterns doc:** Use `ingestion_patterns.md` to select a method based on your source type, latency, and operational requirements, then return here for the implementation. Quick navigation:
