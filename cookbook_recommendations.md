@@ -56,7 +56,6 @@ data_architecture/
 | Method | Description |
 |--------|-------------|
 | Structured Streaming | Micro-batch or continuous stream processing from Kafka, Event Hubs, or Kinesis into Delta Lake. |
-| Lakeflow Spark Declarative Pipelines (SDP) | Declarative pipeline framework for reliable streaming and batch pipelines with built-in data quality expectations. |
 
 #### Database Ingestion
 | Method | Description |
@@ -76,7 +75,6 @@ data_architecture/
 
 **Key differentiators to call out:**
 - Auto Loader vs. COPY INTO: state tracking, schema evolution, and re-run behavior differences.
-- Lakeflow Spark Declarative Pipelines vs. Structured Streaming: managed vs. fine-grained control.
 
 ---
 
@@ -91,6 +89,11 @@ data_architecture/
 | PySpark vs. Spark SQL vs. SDP | Decision guide for choosing the transformation interface based on team skills, testability, and pipeline complexity. |
 
 ### Cookbook — `processing/processing_cookbook.md`
+
+#### Lakeflow Spark Declarative Pipelines (SDP)
+| Topic | Description |
+|-------|-------------|
+| Multi-Hop Pipeline | Declarative Bronze → Silver pipeline with `@dlt.table`, `@dlt.expect` quality rules, and managed cluster lifecycle. Covers Python decorator and SQL `CONSTRAINT ... EXPECT` syntax, pipeline modes (triggered vs. continuous), and managed table lifecycle. |
 
 #### Native Databricks / PySpark Patterns
 | Topic | Description |

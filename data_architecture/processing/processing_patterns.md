@@ -135,14 +135,33 @@ Each notebook corresponds to one or more Databricks Jobs tasks. Task dependencie
 
 ### Mapping to Medallion — Lakeflow Spark Declarative Pipelines
 
+Lakeflow Spark Declarative Pipelines (SDP) is Databricks' declarative pipeline framework. Unlike Databricks Jobs — where individual tasks are Python scripts or notebooks that you orchestrate manually — SDP defines the entire Bronze → Silver → Gold pipeline as a DAG of named dataset definitions. SDP manages compute provisioning, checkpoint state, incremental processing, retry logic, and data quality enforcement automatically.
+
+SDP is the primary home for pipelines that require built-in data quality enforcement (`EXPECT`, `EXPECT OR DROP`, `EXPECT OR FAIL`), CDC-based SCD handling (`APPLY CHANGES INTO`), and automatic pipeline lineage — capabilities that require significant custom code to replicate in a Jobs-based pipeline.
+
+#### Dataset Types and Medallion Layer Mapping
+
 | SDP Dataset Type | Medallion Layer | Notes |
 |---|---|---|
-| `STREAMING LIVE TABLE` with Auto Loader source | Bronze | Incremental ingestion from cloud storage; SDP manages checkpoints |
-| `LIVE TABLE` or `STREAMING LIVE TABLE` with cleansing logic | Silver | `EXPECT` rules enforce quality; `EXPECT OR DROP` quarantines bad records |
-| `APPLY CHANGES INTO` | Silver — SCD | Native SDP CDC / SCD Type 1 and SCD Type 2 without manual MERGE logic |
-| `LIVE TABLE` with aggregations | Gold | SDP refreshes Gold tables when Silver dependencies update |
+| `STREAMING LIVE TABLE` with Auto Loader source | Bronze | Incremental ingestion from cloud storage; SDP manages checkpoints. Auto Loader is the external source — use `spark.readStream.format("cloudFiles")`, not `dlt.read_stream()`, for this layer. |
+| `LIVE TABLE` or `STREAMING LIVE TABLE` with cleansing logic | Silver | `EXPECT` rules enforce quality; `EXPECT OR DROP` quarantines bad records into a separate metrics stream |
+| `APPLY CHANGES INTO` | Silver — SCD | Declarative CDC: SDP handles sequence ordering, type-1/type-2 versioning, and hard deletes automatically |
+| `LIVE TABLE` with aggregations | Gold | SDP refreshes Gold tables when Silver dependencies update; triggered mode re-runs only changed partitions |
 
-**`APPLY CHANGES INTO`** handles SCD Type 1 and SCD Type 2 history tracking automatically from a CDC source (Change Data Feed or a sequence-keyed source).
+#### Pipeline Modes
+
+| Mode | Behaviour | When to Use |
+|------|-----------|-------------|
+| **Triggered** (default) | Runs once, processes all new data, then terminates | Batch-oriented pipelines; most cost-effective for non-latency-sensitive workloads |
+| **Continuous** | Runs indefinitely; processes data as it arrives | Sub-minute latency requirements; always-on compute cost |
+
+Triggered mode is appropriate for the majority of enterprise pipelines. It terminates after each run, incurring compute cost only during execution — similar to a Job cluster lifecycle.
+
+#### Cost and Trade-offs
+
+SDP pipelines incur a DBU premium over equivalent Structured Streaming jobs running on standard clusters. The premium covers the managed platform services (automatic retry, lineage tracking, quality metrics). For cost-sensitive workloads where the pipeline logic is simple and data quality enforcement can be handled with notebook assertions, a Databricks Jobs pipeline with PySpark is the lighter-weight alternative.
+
+**`APPLY CHANGES INTO`** handles SCD Type 1 and SCD Type 2 history tracking automatically from a CDC source (Change Data Feed or a sequence-keyed source). See `processing_cookbook.md` for step-by-step implementation.
 
 ### See Also
 

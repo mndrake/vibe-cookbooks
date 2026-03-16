@@ -1260,6 +1260,122 @@ SELECT date_day FROM date_spine ORDER BY date_day;
 
 ---
 
+## Lakeflow Spark Declarative Pipelines — Multi-Hop Pipeline
+
+> **Architecture diagram:** [Lakeflow Spark Declarative Pipelines overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/) includes a pipeline DAG diagram showing table dependencies, data quality expectation enforcement points, and the Bronze → Silver → Gold lineage graph. [Pipeline monitoring — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/observability) shows the event log and observability dashboard.
+
+Lakeflow Spark Declarative Pipelines (SDP) is Databricks' declarative pipeline framework. SDP manages compute provisioning, checkpointing, retry logic, and data quality enforcement automatically. The full architectural context — when to choose SDP over a Databricks Jobs pipeline, pipeline modes, and cost trade-offs — is in `processing_patterns.md`.
+
+### Problem
+
+A Bronze → Silver medallion pipeline must be built for order data with built-in data quality checks, automatic schema inference on the bronze layer, and managed cluster lifecycle. Failed quality checks must be tracked and quarantined rather than silently dropped or causing pipeline failure.
+
+### Solution
+
+Define pipeline datasets using `@dlt.table` decorators and `@dlt.expect` annotations (Python) or `CREATE OR REFRESH STREAMING TABLE` with `CONSTRAINT ... EXPECT` clauses (SQL). Deploy as an SDP pipeline via the Databricks UI, CLI, or Databricks Asset Bundles.
+
+#### Python Example
+
+```python
+import dlt
+from pyspark.sql.functions import col, current_timestamp
+
+# Bronze: ingest from cloud storage via Auto Loader.
+# spark.readStream is used here because cloud storage is an *external* source,
+# not an SDP-managed table. dlt.read_stream() is only for SDP-managed tables.
+@dlt.table(
+    name="orders_bronze",
+    comment="Raw orders landed from ADLS via Auto Loader",
+    table_properties={"quality": "bronze"}
+)
+def orders_bronze():
+    return (
+        spark.readStream
+        .format("cloudFiles")
+        .option("cloudFiles.format", "json")
+        .option("cloudFiles.schemaLocation", "/pipelines/orders/schema")
+        .load("abfss://raw@mystorageaccount.dfs.core.windows.net/orders/")
+    )
+
+# Silver: cleanse and enforce quality rules.
+# dlt.read_stream() is correct here because orders_bronze is an SDP-managed table.
+@dlt.table(
+    name="orders_silver",
+    comment="Cleansed orders with data quality enforcement",
+    table_properties={"quality": "silver"}
+)
+@dlt.expect_or_drop("valid_order_id", "order_id IS NOT NULL")
+@dlt.expect_or_drop("positive_total",  "order_total > 0")
+def orders_silver():
+    return (
+        dlt.read_stream("orders_bronze")
+        .select(
+            col("order_id"),
+            col("customer_id"),
+            col("order_total").cast("double"),
+            col("order_date").cast("date"),
+            current_timestamp().alias("_ingested_at")
+        )
+    )
+```
+
+#### SQL Example
+
+```sql
+-- Bronze: ingest from cloud storage via cloud_files() (Auto Loader in SQL syntax)
+CREATE OR REFRESH STREAMING TABLE orders_bronze
+COMMENT 'Raw orders from ADLS'
+TBLPROPERTIES ('quality' = 'bronze')
+AS SELECT * FROM cloud_files(
+  'abfss://raw@mystorageaccount.dfs.core.windows.net/orders/',
+  'json',
+  map('cloudFiles.schemaLocation', '/pipelines/orders/schema')
+);
+
+-- Silver: cleanse with inline CONSTRAINT quality rules
+CREATE OR REFRESH STREAMING TABLE orders_silver (
+  CONSTRAINT valid_order_id EXPECT (order_id IS NOT NULL) ON VIOLATION DROP ROW,
+  CONSTRAINT positive_total  EXPECT (order_total > 0)     ON VIOLATION DROP ROW
+)
+COMMENT 'Cleansed orders'
+TBLPROPERTIES ('quality' = 'silver')
+AS
+SELECT
+    order_id,
+    customer_id,
+    CAST(order_total AS DOUBLE) AS order_total,
+    CAST(order_date  AS DATE)   AS order_date,
+    current_timestamp()         AS _ingested_at
+FROM STREAM(LIVE.orders_bronze);
+```
+
+#### Python vs. SQL Differences
+
+| Aspect | Python | SQL |
+|--------|--------|-----|
+| Quality annotations | `@dlt.expect`, `@dlt.expect_or_drop`, `@dlt.expect_or_fail` decorators | `CONSTRAINT ... EXPECT ... ON VIOLATION` clause |
+| Complex transformations | Full PySpark DataFrame API | Limited to Spark SQL expressions |
+| Reusable functions | Python functions importable across pipeline files | No cross-definition function reuse in SQL |
+
+### Discussion and Concerns
+
+- **`spark.readStream` vs. `dlt.read_stream()`:** The bronze layer uses `spark.readStream.format("cloudFiles")` because cloud storage is an external source, not an SDP-managed table. `dlt.read_stream()` is for reading SDP-managed tables (those defined with `@dlt.table` or `CREATE OR REFRESH STREAMING TABLE`). Using `spark.table()` on an SDP-managed table bypasses incremental processing; using `dlt.read_stream()` on a cloud storage path raises a resolution error.
+- **Pipeline mode:** Triggered mode (default) runs once and terminates — appropriate for batch-oriented pipelines. Continuous mode runs indefinitely. For most Bronze → Silver pipelines, triggered mode is cheaper and sufficient.
+- **Managed table lifecycle:** Tables created inside an SDP pipeline are managed by the pipeline. If the pipeline is deleted, the managed tables and their data are also deleted. To retain tables after pipeline deletion, write to external Delta tables using an external storage location.
+- **One pipeline per managed table:** An SDP-managed table can only be written by the pipeline that created it. To share data between pipelines, materialise to an external (non-SDP-managed) Delta table.
+- **Deploying a pipeline:** Create via the Databricks UI (Lakeflow Spark Declarative Pipelines → Create pipeline), via the CLI (`databricks pipelines create --json '{"name":"orders","libraries":[{"notebook":{"path":"/path/to/pipeline_notebook"}}]}'`), or via Databricks Asset Bundles with a `pipelines:` block in `databricks.yml`. See [Create a pipeline](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/configure-pipeline) for the full reference.
+- **DBU premium:** SDP incurs a DBU premium over equivalent Structured Streaming on standard clusters. For simple pipelines where quality enforcement can be done with notebook assertions, a Jobs-based PySpark pipeline may be cheaper.
+
+### See Also
+
+- [Lakeflow Spark Declarative Pipelines — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/)
+- [SDP expectations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations)
+- [SDP APPLY CHANGES INTO — Azure Databricks](https://docs.databricks.com/en/delta-live-tables/cdc.html)
+- [Slowly Changing Dimensions — SCD Type 2 via SDP APPLY CHANGES INTO](#slowly-changing-dimensions--scd-type-2-via-sdp-apply-changes-into)
+- `processing_patterns.md` — when to choose SDP vs. Databricks Jobs
+
+---
+
 ## Pipeline Orchestration — Databricks Jobs and Asset Bundles
 
 Databricks Jobs is the native orchestration layer for batch and streaming pipelines. It provides a DAG of tasks that can include notebook tasks, Python script tasks, SQL tasks, SDP pipeline tasks, and Databricks Asset Bundle deployments.

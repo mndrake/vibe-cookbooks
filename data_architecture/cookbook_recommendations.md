@@ -42,7 +42,6 @@ Step-by-step implementation guide for all native ingestion methods. Each method 
 | File Ingestion — COPY INTO | Perform a one-time or ad hoc bulk load from files already in cloud storage |
 | File Ingestion — SFTP | Receive files from a partner or vendor system via SFTP |
 | Streaming Ingestion — Structured Streaming | Consume events from Kafka, Azure Event Hubs, or Kinesis at low latency |
-| Streaming Ingestion — Lakeflow Spark Declarative Pipelines (SDP) | Build a declarative multi-hop streaming pipeline with data quality enforcement |
 | Database Ingestion — JDBC | Extract from a relational database (SQL Server, PostgreSQL, MySQL, Oracle) |
 | Managed Ingestion — Lakeflow Connect | Ingest from SaaS applications (Salesforce, Workday, ServiceNow) |
 | Managed Ingestion — Partner Connectors | Integrate Fivetran or Airbyte as the managed ingestion layer |
@@ -70,6 +69,7 @@ Step-by-step implementation guide for Delta Lake transformations, aggregations, 
 
 | Section | Research when you need to... |
 |---------|------------------------------|
+| Lakeflow Spark Declarative Pipelines — Multi-Hop Pipeline | Build a declarative Bronze → Silver pipeline with quality rules, managed cluster lifecycle, and pipeline modes |
 | Delta Lake Transformations — MERGE INTO | Upsert records into a Delta table based on a business key |
 | Delta Lake Transformations — UPDATE and DELETE | Correct or remove records already written to a Delta table |
 | Aggregations and Summarization | Compute aggregates, running totals, and ranked values using window functions |
