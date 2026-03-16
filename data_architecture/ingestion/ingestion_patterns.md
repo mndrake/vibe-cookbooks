@@ -188,7 +188,7 @@ JDBC ingestion is the standard pattern for extracting data directly from relatio
 | **Full vs. incremental extract** | Full extract: read the entire table each run — simple but expensive for large tables. Incremental: filter on a watermark column (`updated_at`, sequence ID) to read only changed rows since the last run. Requires a reliable, indexed watermark column. |
 | **Parallelism** | Default JDBC reads are single-threaded. Configure `numPartitions`, `partitionColumn`, `lowerBound`, `upperBound` for parallel reads. The partition column must be numeric or date-type and indexed on the source. |
 | **Source load** | Parallel reads issue multiple concurrent queries. Use a read replica where available. Tune `numPartitions` to stay within the source's connection limit. |
-| **Credential management** | Store all JDBC credentials in Databricks Secrets. Never hardcode in notebooks or job parameters. |
+| **Credential management** | Store all JDBC credentials in Databricks Secrets. Never hardcode in notebooks or job parameters. On Azure Databricks, use Azure Key Vault-backed secret scopes as the recommended backend — see the Infrastructure Prerequisites section of `ingestion_cookbook.md` for setup guidance. |
 
 ### Trade-offs
 

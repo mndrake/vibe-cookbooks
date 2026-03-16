@@ -105,10 +105,14 @@ See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/
 
 ### Databricks Secrets
 
-All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...")`. Create a secret scope and populate it before running those examples:
+All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...")`.
+
+> **Recommended: Azure Key Vault-backed secret scopes.** On Azure Databricks, create secret scopes backed by Azure Key Vault so that credentials are managed centrally in Key Vault and consumed transparently via `dbutils.secrets.get()`. This is the standard enterprise approach — secrets are governed by Key Vault access policies rather than per-scope ACLs in Databricks, and rotation is handled in Key Vault without changes to notebook code. Create an AKV-backed scope via the Databricks UI: **Settings → Developer → Manage secret scopes → Create** and provide your Key Vault DNS name and resource ID. See [Azure Key Vault-backed secret scopes — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secret-scopes#azure-key-vault-backed-scopes) for the full setup guide.
+>
+> If Key Vault is not available, create Databricks-managed scopes using the CLI (shown below). The `dbutils.secrets.get()` call is identical regardless of scope backend.
 
 ```bash
-# Create a secret scope (once per scope, run on local machine with Databricks CLI)
+# Databricks-managed scope fallback (use AKV-backed scopes in production)
 databricks secrets create-scope --scope jdbc-secrets
 databricks secrets create-scope --scope sftp-secrets
 databricks secrets create-scope --scope eventhubs-secrets
@@ -678,6 +682,21 @@ LIMIT 50;
 
 - [Databricks Partner Connect — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/partner-connect/)
 - [Fivetran Databricks destination](https://fivetran.com/docs/destinations/databricks)
+
+---
+
+## Sources Not Covered in This Cookbook
+
+Some source systems — ERP platforms, proprietary databases, on-premises applications, mainframes, custom APIs — do not have a native Databricks connector and are not covered by Lakeflow Connect or the major partner connectors. The standard pattern for these sources is a **landing zone approach**:
+
+1. An external orchestration tool extracts data from the source and writes it as files (CSV, JSON, Parquet, or Avro) to a cloud storage landing zone (ADLS Gen2 container, S3 prefix, or GCS bucket). Azure Data Factory (ADF) is the most common tool on Azure; AWS Glue and Informatica are common alternatives.
+2. Databricks reads the files from the landing zone using **Auto Loader** (for ongoing incremental file arrival) or **COPY INTO** (for scheduled batch loads). All patterns in the [File Ingestion](#file-ingestion) section apply directly.
+
+The landing zone acts as the contractual boundary between the upstream extraction tool and the Databricks pipeline. Neither side needs to know about the other's schedule — the upstream tool writes when data is ready; Databricks reads when triggered. This also provides a raw file audit trail that enables reprocessing if a downstream pipeline fails.
+
+For the full architectural context — when a landing zone is required vs. when direct ingestion bypasses it, retention policies, and trade-offs — see the **Landing Zone Architecture** section in `ingestion_patterns.md`.
+
+> **Note:** Configuring the external orchestration tool (ADF pipelines, AWS Glue jobs, etc.) is outside the scope of this cookbook. This cookbook covers what Databricks does once data is in the landing zone.
 
 ---
 

@@ -232,7 +232,13 @@ Credentials stored directly in notebooks or job configurations are exposed in ve
 
 ### Solution
 
-Use Databricks Secrets to store credentials outside of code. Secrets are stored in a secret scope, retrieved at runtime using `dbutils.secrets.get()`, and automatically redacted in notebook output so they cannot appear in logs. The Databricks CLI is used to create scopes and store secrets — these operations require Databricks workspace admin rights or the `Create Secret Scope` permission.
+Use Databricks Secrets to store credentials outside of code. Secrets are stored in a secret scope, retrieved at runtime using `dbutils.secrets.get()`, and automatically redacted in notebook output so they cannot appear in logs.
+
+> **Recommended: Azure Key Vault-backed secret scopes.** On Azure Databricks, create secret scopes backed by Azure Key Vault. Credentials are managed centrally in Key Vault, governed by Key Vault access policies, and consumed transparently via `dbutils.secrets.get()` with no code changes. Rotation and access auditing are handled in Key Vault without touching notebook code or Databricks ACLs. Create an AKV-backed scope via **Settings → Developer → Manage secret scopes → Create** — provide your Key Vault DNS name and resource ID. See [Azure Key Vault-backed secret scopes — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secret-scopes#azure-key-vault-backed-scopes).
+>
+> Databricks-managed scopes (created via the CLI) are appropriate for non-Azure environments or when Key Vault is not available.
+
+The Databricks CLI is used to create Databricks-managed scopes and store secrets — these operations require Databricks workspace admin rights or the `Create Secret Scope` permission.
 
 #### Python Example
 
