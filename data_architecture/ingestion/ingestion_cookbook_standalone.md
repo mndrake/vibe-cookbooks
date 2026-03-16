@@ -108,7 +108,8 @@ All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or lat
 
 | Feature | Minimum DBR |
 |---------|-------------|
-| Auto Loader `schemaEvolutionMode`, `trigger(availableNow=True)` | 11.3 LTS |
+| Auto Loader `schemaEvolutionMode`, `trigger(availableNow=True)` | 10.4 LTS |
+| `trigger(once=True)` deprecated — use `trigger(availableNow=True)` | 11.3 LTS |
 | Liquid Clustering | 13.3 LTS |
 
 **Recommendation:** Use **DBR 14.3 LTS or later** for new workloads — it is the current long-term support release as of March 2026 and includes all features referenced in this cookbook.
@@ -156,8 +157,10 @@ source_path = "abfss://raw@mystorageaccount.dfs.core.windows.net/orders/"
     # It is separate from checkpointLocation (which tracks which files have been processed).
     # Both must be set. Storing it as a subdirectory of checkpoint_path keeps both together.
     .option("cloudFiles.schemaLocation", checkpoint_path + "/schema")
-    # schemaEvolutionMode controls whether new columns in source files are accepted
-    # at the READ side. addNewColumns adds them to the inferred schema automatically.
+    # schemaEvolutionMode controls new-column handling at the READ side. With addNewColumns,
+    # when a new column is first detected the stream stops with UnknownFieldException, Auto Loader
+    # updates the schema at the schema location, and the stream must be restarted. In a scheduled
+    # job, the run that detects the new column fails; the following run succeeds.
     .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
     .load(source_path)
     .writeStream
@@ -197,6 +200,7 @@ LIMIT 10;
 - **Checkpoint durability:** The checkpoint directory must be on durable cloud storage. Deleting it causes Auto Loader to reprocess all files from the beginning.
 - **`schemaLocation`:** Auto Loader uses `schemaLocation` to store the schema it infers from the source files — this is separate from the checkpoint directory (which tracks which files have been processed). They are co-located in the example (`checkpoint_path + "/schema"`) for convenience, but they serve different functions. If you change `checkpoint_path` for a different table, update `schemaLocation` to match — pointing two Auto Loader streams at the same `schemaLocation` will cause them to share schema state, which leads to incorrect schema inference. If the schema location is corrupted or contains a stale schema, delete only the `schemaLocation` subdirectory (not the full checkpoint directory) and let Auto Loader re-infer the schema from the source files on the next run. Deleting only the schema location resets schema inference without resetting file tracking state.
 - **`schemaEvolutionMode` and `mergeSchema` — both required for schema evolution:** These are two independent mechanisms that must both be set. `cloudFiles.schemaEvolutionMode` governs the **read side**: it controls whether Auto Loader's schema inference accepts new columns from incoming source files. `mergeSchema` governs the **write side**: it controls whether the Delta Lake writer adds new columns to the target table when it encounters a column not already in the table schema. Setting `schemaEvolutionMode = "addNewColumns"` without `mergeSchema = "true"` means the new column is present in the in-memory DataFrame but the Delta write fails at runtime with `AnalysisException: cannot write nullable column to non-nullable table`. Setting `mergeSchema = "true"` without `addNewColumns` means the writer would accept schema changes, but Auto Loader would not include the new column in the DataFrame in the first place. Both must be set together for end-to-end column addition.
+  **Operational note — `addNewColumns` and the restart cycle:** When `addNewColumns` encounters a new column for the first time, the stream does not add it silently. The stream **stops with `UnknownFieldException`**, Auto Loader updates the stored schema at the schema location, and the stream must be restarted before the new column is included in the output. For a scheduled Databricks Job, this means: the job run that first sees the new column fails; the next scheduled run starts with the updated schema and succeeds. This is expected behavior. Alert on consecutive job failures — a single schema-evolution failure followed by success is normal; two or more consecutive failures indicates a different problem.
   Mode choices for `schemaEvolutionMode`: `addNewColumns` for bronze ingestion where all source columns must be captured. `failOnNewColumns` for silver/gold tables where schema drift should trigger investigation. `rescue` for highly variable sources. **`none` silently drops any column in the source file that is not already in the inferred schema** — do not use `none` unless you have a separate mechanism to validate that no new columns exist before each run, or you will lose data without an error.
 - **`trigger(availableNow=True)` vs. `trigger(once=True)`:** `availableNow=True` is the modern replacement for the deprecated `once=True`. Use `availableNow=True` for all new pipelines. `trigger(once=True)` processes a single micro-batch and then stops, which may leave unprocessed files if more than one batch of data has arrived; this is the main reason it was replaced.
 - **Target table creation:** `.toTable("main.bronze.orders")` creates the Delta table automatically on first run if it does not exist, provided the executing principal has `CREATE TABLE` on the target schema. No `CREATE TABLE` DDL is required before the first run.
@@ -244,13 +248,13 @@ spark.sql("""
     FROM 'abfss://raw@mystorageaccount.dfs.core.windows.net/sales/2026/03/'
     FILEFORMAT = CSV
     FORMAT_OPTIONS (
-        'header' = 'true',
-        'inferSchema' = 'false',
-        'delimiter' = ','
+        'header'         = 'true',
+        'inferSchema'    = 'false',
+        'delimiter'      = ',',
+        'badRecordsPath' = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/sales/'
     )
     COPY_OPTIONS (
-        'mergeSchema'      = 'false',
-        'badRecordsPath'   = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/sales/'
+        'mergeSchema' = 'false'
     )
 """)
 ```
@@ -262,13 +266,13 @@ COPY INTO main.bronze.sales_transactions
 FROM 'abfss://raw@mystorageaccount.dfs.core.windows.net/sales/2026/03/'
 FILEFORMAT = CSV
 FORMAT_OPTIONS (
-  'header'       = 'true',
-  'inferSchema'  = 'false',
-  'delimiter'    = ','
+  'header'         = 'true',
+  'inferSchema'    = 'false',
+  'delimiter'      = ',',
+  'badRecordsPath' = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/sales/'
 )
 COPY_OPTIONS (
-  'mergeSchema'     = 'false',
-  'badRecordsPath'  = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/sales/'
+  'mergeSchema' = 'false'
 );
 
 -- Validate: check row count and latest load timestamp
@@ -280,8 +284,8 @@ FROM main.bronze.sales_transactions;
 
 #### Discussion and Concerns
 
-- **COPY INTO vs. Auto Loader:** COPY INTO is simpler — no streaming context, no checkpoint directory, pure SQL — but does not support schema evolution. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
-- **Directory scanning is not recursive:** COPY INTO reads files at the exact path specified. It does **not** recurse into subdirectories. If files are organized under date-partitioned subdirectories (e.g., `sales/2026/03/15/`, `sales/2026/03/16/`), point COPY INTO at each subdirectory explicitly, or use Auto Loader which supports recursive path scanning via glob patterns in the source path (e.g., `abfss://raw@.../sales/2026/03/**/*.csv`).
+- **COPY INTO vs. Auto Loader:** COPY INTO is simpler — no streaming context, no checkpoint directory, pure SQL. It does not support automatic schema evolution: new columns in source files are silently dropped unless `'mergeSchema' = 'true'` is set in `COPY_OPTIONS`, which adds new columns to the target table but must be explicitly enabled on each run. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
+- **Directory scanning is not recursive by default:** COPY INTO reads files at the exact path specified. It does **not** recurse into subdirectories unless `'recursiveFileLookup' = 'true'` is added to `FORMAT_OPTIONS`. If files are organized under date-partitioned subdirectories (e.g., `sales/2026/03/15/`, `sales/2026/03/16/`), either enable `recursiveFileLookup` and point COPY INTO at the root path, or point COPY INTO at each subdirectory explicitly. Auto Loader supports recursive path scanning via glob patterns (e.g., `abfss://raw@.../sales/2026/03/**/*.csv`).
 - **`badRecordsPath`:** Routes malformed rows to a separate storage path rather than aborting the entire load. Without it, a single corrupt record fails the full COPY INTO command. Point `badRecordsPath` to a container **outside** the source data hierarchy (e.g., an `ops` container) to avoid COPY INTO attempting to re-ingest the bad record files on subsequent runs. Monitor the bad records path as part of pipeline health checks.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
 - **`inferSchema` and pre-defined DDL:** When `inferSchema = 'true'` is set on a COPY INTO command targeting a table with an existing schema, COPY INTO infers types from the source file and attempts to cast them to the target column types at write time. This can cause errors or silent coercion — for example, if a CSV `sale_date` column is inferred as `STRING` but the target DDL defines it as `DATE`. For tables where the DDL already defines the target schema, set `inferSchema = 'false'`: COPY INTO reads all CSV values as strings and the Delta writer handles casting to the target column types, producing a predictable and explicit type mapping. Use `inferSchema = 'true'` only when creating a new table without a pre-defined DDL and when accepting inferred column types at the bronze layer is explicitly intended.
