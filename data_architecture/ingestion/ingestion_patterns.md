@@ -123,9 +123,7 @@ The choice between batch and streaming ingestion is one of the most consequentia
 
 ### Trade-offs
 
-Micro-batch mode (`trigger(availableNow=True)`) provides exactly-once guarantees via checkpoint while running on a job cluster that terminates after each cycle — significantly cheaper than a continuously running stream and more reliable than pure batch. For most enterprise use cases with latency requirements of five to thirty minutes, micro-batch is the optimal choice.
-
-Continuous streaming should only be chosen when the business genuinely demands sub-minute freshness and the organisation is prepared to invest in the operational tooling to support it.
+Micro-batch mode (`trigger(availableNow=True)`) terminates the cluster after each run, avoiding the continuous cost of a running stream. For pipelines where latency requirements are measured in minutes rather than seconds, and where event volume does not require continuous processing to stay within the trigger window, this reduces cost relative to continuous streaming. For very high-throughput sources where the volume arriving between trigger cycles exceeds what a single cluster can process within the window, or where sub-minute latency is a hard requirement, continuous streaming is required regardless of cost. Evaluate based on your actual event volume, the time budget per trigger cycle, and the cluster startup cost for your workload.
 
 ### See Also
 
@@ -181,7 +179,7 @@ JDBC ingestion is the standard pattern for extracting data directly from relatio
 | **Full vs. incremental extract** | Full extract: read the entire table each run — simple but expensive for large tables. Incremental: filter on a watermark column (`updated_at`, sequence ID) to read only changed rows since the last run. Requires a reliable, indexed watermark column. |
 | **Parallelism** | Default JDBC reads are single-threaded. Configure `numPartitions`, `partitionColumn`, `lowerBound`, `upperBound` for parallel reads. The partition column must be numeric or date-type and indexed on the source. |
 | **Source load** | Parallel reads issue multiple concurrent queries. Use a read replica where available. Tune `numPartitions` to stay within the source's connection limit. |
-| **Credential management** | Store all JDBC credentials in Databricks Secrets. Never hardcode in notebooks or job parameters. On Azure Databricks, use Azure Key Vault-backed secret scopes as the recommended backend — see the Infrastructure Prerequisites section of `ingestion_cookbook.md` for setup guidance. |
+| **Credential management** | Store all JDBC credentials in Databricks Secrets. Never hardcode in notebooks or job parameters. On Azure Databricks, choose between Azure Key Vault-backed secret scopes (when credentials are rotated centrally by a secrets management team) or Databricks-managed scopes (when Key Vault is not available or the additional resource overhead is not justified) — see the Infrastructure Prerequisites section of `ingestion_cookbook.md` for setup guidance on both. |
 
 ### Trade-offs
 
@@ -202,13 +200,12 @@ Managed ingestion patterns handle extraction from source systems via a connector
 
 ### Lakeflow Connect
 
-As of March 2026, Lakeflow Connect is generally available for Salesforce, Workday, and SQL Server, with additional connectors available in preview. Key characteristics:
+As of March 2026, Lakeflow Connect is generally available for Salesforce, Workday, and SQL Server, with additional connectors available in preview. Characteristics:
 
-- Runs entirely on Databricks serverless compute — no third-party data transit
-- Governed by Unity Catalog: lineage, access control, and audit apply to ingested tables
-- Automatic schema evolution: new source columns are automatically added on the next pipeline run
-- CI/CD support via Databricks Asset Bundles
-- Cost model: serverless DBU consumption, not per-row fees
+- **Compute:** Runs on Databricks serverless compute. Data does not transit third-party infrastructure. Requires Unity Catalog to be enabled — lineage, access control, and audit are applied to ingested tables via Unity Catalog governance.
+- **Schema evolution:** New source columns are automatically added to the Delta table schema on the next pipeline run. Column deletions in the source are not propagated — the column is retained in Delta with `null` values for rows synced after the deletion. Column renames produce a new column; the prior column persists with historical values. Downstream pipelines must account for both cases.
+- **CI/CD:** Supports deployment via Databricks Asset Bundles.
+- **Cost:** Billed at the Databricks serverless DBU rate based on compute time, not per row ingested. For low-volume, low-frequency syncs, the per-trigger compute overhead may exceed what a per-row pricing model would cost — evaluate based on sync frequency and data volume.
 
 ### See Also
 

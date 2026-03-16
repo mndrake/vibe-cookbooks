@@ -239,7 +239,7 @@ spark.sql("""
     )
     COPY_OPTIONS (
         'mergeSchema'      = 'false',
-        'badRecordsPath'   = 'abfss://raw@mystorageaccount.dfs.core.windows.net/_bad_records/sales/'
+        'badRecordsPath'   = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/sales/'
     )
 """)
 ```
@@ -257,7 +257,7 @@ FORMAT_OPTIONS (
 )
 COPY_OPTIONS (
   'mergeSchema'     = 'false',
-  'badRecordsPath'  = 'abfss://raw@mystorageaccount.dfs.core.windows.net/_bad_records/sales/'
+  'badRecordsPath'  = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/sales/'
 );
 
 -- Validate: check row count and latest load timestamp
@@ -270,8 +270,8 @@ FROM main.bronze.sales_transactions;
 #### Discussion and Concerns
 
 - **COPY INTO vs. Auto Loader:** COPY INTO is simpler — no streaming context, no checkpoint directory, pure SQL — but does not support schema evolution. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
-- **Directory scanning is not recursive:** COPY INTO reads files at the exact path specified. It does **not** recurse into subdirectories. If files are organized under date-partitioned subdirectories (e.g., `sales/2026/03/15/`, `sales/2026/03/16/`), point COPY INTO at each subdirectory explicitly, or use Auto Loader which supports recursive path scanning via `cloudFiles.includeExistingFiles` and glob patterns.
-- **`badRecordsPath`:** Routes malformed rows to a separate storage path rather than aborting the entire load. Without it, a single corrupt record fails the full COPY INTO command. Monitor the bad records path as part of pipeline health checks.
+- **Directory scanning is not recursive:** COPY INTO reads files at the exact path specified. It does **not** recurse into subdirectories. If files are organized under date-partitioned subdirectories (e.g., `sales/2026/03/15/`, `sales/2026/03/16/`), point COPY INTO at each subdirectory explicitly, or use Auto Loader which supports recursive path scanning via glob patterns in the source path (e.g., `abfss://raw@.../sales/2026/03/**/*.csv`).
+- **`badRecordsPath`:** Routes malformed rows to a separate storage path rather than aborting the entire load. Without it, a single corrupt record fails the full COPY INTO command. Point `badRecordsPath` to a container **outside** the source data hierarchy (e.g., an `ops` container) to avoid COPY INTO attempting to re-ingest the bad record files on subsequent runs. Monitor the bad records path as part of pipeline health checks.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
 - **`inferSchema = 'true'` for bronze CSV:** Schema inference is acceptable at the bronze layer when column types are not known in advance — for example, raw CSV files from an external partner. For tables with fixed, known column types, always define the DDL explicitly and omit `inferSchema`.
 
@@ -352,7 +352,7 @@ ORDER BY 1 DESC;
 - **Checkpoint location:** Store checkpoints on durable cloud storage. Deleting the checkpoint causes the stream to restart from the beginning of the Event Hub retention window.
 - **`sc._jvm` and the encryption call:** `sc` is the `SparkContext`, automatically available in Databricks notebooks. The `sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(...)` call is a Py4J bridge into the Java library — it is required because the Event Hubs connector expects the connection string in encrypted form. This call is only available in Databricks notebook and job cluster environments where the Event Hubs library is installed; it will raise a `NameError` in standalone Python scripts that do not have `sc` pre-initialised.
 - **Stream lifecycle — Job vs. notebook:** `trigger(availableNow=True)` (used in the code above) processes all available Event Hub partitions and then terminates — the correct choice for Databricks Jobs where each task must terminate for the job to complete. Use `trigger(processingTime="1 minute")` only when running in a long-running notebook or a Databricks Workflows **Continuous Job** — this trigger starts a stream that never terminates on its own. To stop a running stream gracefully from a notebook: `query = stream.start(); query.awaitTermination(); query.stop()`.
-- **`from_json` and malformed messages:** `from_json` returns `null` for all fields when a message body does not match the declared schema (wrong field types, malformed JSON, encoding issues) — it does not raise an error. Monitor for rows where `order_id IS NULL` in the bronze table to detect schema mismatches or upstream message format changes.
+- **`from_json` and malformed messages:** `from_json` returns `null` for all fields when a message body does not match the declared schema (wrong field types, malformed JSON, encoding issues) — it does not raise an error. Monitor for rows where `order_id IS NULL` in the bronze table to detect schema mismatches or upstream message format changes. When null rows appear, retain them in the bronze table for investigation (do not delete — they are evidence of upstream drift), alert the pipeline owner, and resolve by updating `order_schema` to match the new source format or by coordinating with the upstream producer to fix the message structure.
 
 #### See Also
 
