@@ -80,7 +80,7 @@ The examples in this cookbook reference three containers on the storage account.
 | `checkpoints` | Streaming and Auto Loader checkpoint state | Auto Loader, Structured Streaming |
 | `ops` | Bad records, dead-letter output | COPY INTO `badRecordsPath` |
 
-See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/data-governance/unity-catalog/manage-external-locations-and-credentials) for setup instructions.
+See [External locations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/connect/unity-catalog/cloud-storage/external-locations) for setup instructions.
 
 ### Databricks Secrets
 
@@ -97,9 +97,10 @@ All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...
 databricks secrets create-scope --scope jdbc-secrets
 databricks secrets create-scope --scope eventhubs-secrets
 
-# Add a secret (prompts for value — value is never stored in shell history)
-databricks secrets put-secret --scope jdbc-secrets --key sql-user
-databricks secrets put-secret --scope jdbc-secrets --key sql-password
+# Add a secret (enter value at the interactive prompt — never stored in shell history)
+# Syntax: databricks secrets put-secret <scope> <key>
+databricks secrets put-secret jdbc-secrets sql-user
+databricks secrets put-secret jdbc-secrets sql-password
 ```
 
 See [Databricks Secrets — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/security/secrets/secrets) for full documentation including permissions management.
@@ -127,7 +128,7 @@ All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or lat
 | Scenario | Recommended Configuration |
 |----------|--------------------------|
 | Auto Loader / JDBC batch jobs | Job cluster, auto-terminate after job; start with 2–4 workers, scale based on actual throughput |
-| Structured Streaming (continuous) | Job cluster with auto-scaling, or a [Databricks Continuous Job](https://learn.microsoft.com/en-us/azure/databricks/jobs/create-run-jobs#continuous-job) (a job configured to restart automatically when the run terminates — distinct from a standard job task); always-on incurs continuous cost |
+| Structured Streaming (continuous) | Job cluster with auto-scaling, or a [Lakeflow Jobs continuous trigger](https://learn.microsoft.com/en-us/azure/databricks/jobs/triggers) (a job configured to restart automatically when the run terminates — distinct from a standard job task); always-on incurs continuous cost |
 | JDBC with `numPartitions = 8` | At least 4 workers so partitions distribute across executors; single-node clusters will serialise reads |
 | One-off loads / development | All-purpose cluster; not recommended for production recurring jobs due to cost and contention |
 
@@ -212,7 +213,7 @@ LIMIT 10;
   Mode choices for `schemaEvolutionMode`: `addNewColumns` for bronze ingestion where all source columns must be captured. `failOnNewColumns` for silver/gold tables where schema drift should trigger investigation. `rescue` for highly variable sources. **`none` silently drops any column in the source file that is not already in the inferred schema** — do not use `none` unless you have a separate mechanism to validate that no new columns exist before each run, or you will lose data without an error.
 - **`trigger(availableNow=True)` vs. `trigger(once=True)`:** `availableNow=True` is the modern replacement for the deprecated `once=True`. Use `availableNow=True` for all new pipelines. `trigger(once=True)` processes a single micro-batch and then stops, which may leave unprocessed files if more than one batch of data has arrived; this is the main reason it was replaced.
 - **Target table creation:** `.toTable("main.bronze.orders")` creates the Delta table automatically on first run if it does not exist, provided the executing principal has `CREATE TABLE` on the target schema. No `CREATE TABLE` DDL is required before the first run.
-- **File discovery mode:** Auto Loader defaults to **directory listing** mode — it polls the storage path on each trigger cycle to find new files. For landing zones with thousands of files or high file-arrival frequency, consider **file notification mode**, which uses cloud storage events (Azure Event Grid / SQS) to detect new files with lower latency and reduced API costs: `.option("cloudFiles.useNotifications", "true")`. File notification mode requires a one-time setup of a storage queue resource. See [Auto Loader file detection modes](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/file-detection-modes) for setup steps.
+- **File discovery mode:** Auto Loader defaults to **directory listing** mode — it polls the storage path on each trigger cycle to find new files. For landing zones with thousands of files or high file-arrival frequency, consider **file notification mode**, which delivers lower latency and reduced storage API costs. On **DBR 14.3+** with a Unity Catalog external location, the recommended approach is managed file events: enable file events on the external location, then set `.option("cloudFiles.useManagedFileEvents", "true")` — Databricks manages the notification infrastructure automatically with no manual queue setup. On earlier runtimes or without Unity Catalog, use the classic file notification mode: `.option("cloudFiles.useNotifications", "true")`, which requires one-time setup of a storage event queue. See [Auto Loader file notification mode — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/cloud-object-storage/auto-loader/file-notification-mode) for setup steps for both approaches.
 
 #### See Also
 
@@ -308,11 +309,11 @@ FROM main.bronze.sales_transactions;
 
 ### Streaming Ingestion — Structured Streaming
 
-This section covers Azure Event Hubs using the `eventhubs` Spark connector. Structured Streaming also supports Kafka (using `format("kafka")` with `kafka.bootstrap.servers` and `subscribe` options) and Amazon Kinesis (using the Kinesis connector for Databricks) — the checkpoint and Delta write patterns are the same, but the source-specific connection options differ. See [Kafka connector — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/kafka) and [Kinesis connector — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/kinesis) for those source configurations.
+This section covers Azure Event Hubs using the `eventhubs` Spark connector. Structured Streaming also supports Kafka (using `format("kafka")` with `kafka.bootstrap.servers` and `subscribe` options) and Amazon Kinesis (using the `read_kinesis` SQL table-valued function or the Kinesis PySpark connector) — the checkpoint and Delta write patterns are the same, but the source-specific connection options differ. See [Kafka connector — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/kafka) and [read_kinesis — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/read_kinesis) for those source configurations.
 
 Structured Streaming tracks the last committed source offset in a checkpoint directory. On restart, it resumes from the last committed offset. When writing to Delta Lake with a durable checkpoint, each message from Event Hubs is written to Delta once, provided the source retains messages at that offset. If the Event Hub retention window expires before the stream restarts, messages between the last checkpoint offset and the earliest available offset are unrecoverable. **Detecting the gap:** when the checkpoint offset is older than the Event Hub retention window, the connector may raise an error (e.g., `OFFSET_OUT_OF_RANGE`) or, depending on connector configuration, resume from the earliest available offset without an error — meaning data loss can be silent. After any extended stream outage, compare the row count and latest `enqueuedTime` in the Delta table against the Event Hub's earliest available offset and message count (visible in the Azure portal under **Event Hubs namespace → your Event Hub → Metrics**) to confirm no gap exists. **Recovery:** messages that fell outside the retention window cannot be re-read from Event Hubs. If [Event Hubs Capture](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-capture-overview) is enabled, backfill the gap using COPY INTO or Auto Loader targeting the Avro capture files (`FILEFORMAT = AVRO`) — see the Capture Discussion bullet below for path details and setup guidance. If no secondary source exists, document the loss, update downstream row count SLAs accordingly, and increase the Event Hub retention period to reduce the risk of recurrence. The exactly-once guarantee applies to the Spark-to-Delta write layer; it does not prevent duplicate messages produced upstream of the message bus.
 
-> **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) diagrams the micro-batch execution model, offset tracking, and checkpoint recovery. [Azure Event Hubs with Spark — Microsoft](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-spark-connector) shows the Event Hubs partition-to-Spark-partition mapping.
+> **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) diagrams the micro-batch execution model, offset tracking, and checkpoint recovery. [Azure Event Hubs — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/streaming-event-hubs) covers Event Hubs connection options and consumer group configuration.
 
 #### Problem
 
@@ -397,7 +398,7 @@ ORDER BY 1 DESC;
 
 Spark's JDBC data source reads directly from relational databases over a JDBC connection. It is the standard pattern when data cannot be exported to cloud storage first and no CDC feed is available.
 
-> **Architecture diagram:** [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/connect/external-systems/jdbc) includes a diagram of parallel partition reads showing how `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions` split the source table into concurrent range queries.
+> **Architecture diagram:** [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/external-data/jdbc) includes a diagram of parallel partition reads showing how `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions` split the source table into concurrent range queries.
 
 #### Problem
 
@@ -506,8 +507,8 @@ LIMIT 20;
 
 #### See Also
 
-- [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/connect/external-systems/jdbc)
-- [DeltaTable Python API — Delta Lake](https://docs.delta.io/latest/api/python/api/delta.tables.DeltaTable.html)
+- [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/external-data/jdbc)
+- [DeltaTable Python API — Delta Lake](https://docs.delta.io/api/latest/python/spark/)
 
 ---
 
@@ -517,7 +518,7 @@ LIMIT 20;
 
 > **Architecture diagram:** [Lakeflow Connect overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) shows the architecture of Lakeflow Connect: SaaS source → Databricks serverless compute → Delta tables under Unity Catalog, with no data transiting third-party infrastructure.
 
-Lakeflow Connect provides Databricks-native managed connectors for SaaS applications and databases. As of March 2026, it is GA for Salesforce, Workday, and SQL Server. Pipelines run on serverless compute within Databricks, governed by Unity Catalog.
+Lakeflow Connect provides Databricks-native managed connectors for SaaS applications and databases. As of March 2026, it is GA for Salesforce, Workday, SQL Server, ServiceNow, and Google Analytics. Pipelines run on serverless compute within Databricks, governed by Unity Catalog.
 
 #### Problem
 
@@ -599,7 +600,7 @@ ORDER BY 1 DESC;
 
 #### Discussion and Concerns
 
-- **Connector catalogue:** GA for Salesforce, Workday, SQL Server as of March 2026. Additional connectors are available in public preview. Check [documentation](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list. **Preview connectors should not be used for production workloads without evaluating the risk:** connector API contracts, schema behaviour, and authentication mechanisms may change between preview and GA without notice; Databricks may alter or remove a preview connector; and if a connector is discontinued, the replacement migration path may require rebuilding the ingestion pipeline from scratch. For production use, confirm the connector is GA and review the release notes for schema or API changes at each Databricks platform version update.
+- **Connector catalogue:** GA for Salesforce, Workday, SQL Server, ServiceNow, and Google Analytics as of March 2026. Additional connectors are available in public preview. Check [documentation](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list. **Preview connectors should not be used for production workloads without evaluating the risk:** connector API contracts, schema behaviour, and authentication mechanisms may change between preview and GA without notice; Databricks may alter or remove a preview connector; and if a connector is discontinued, the replacement migration path may require rebuilding the ingestion pipeline from scratch. For production use, confirm the connector is GA and review the release notes for schema or API changes at each Databricks platform version update.
 - **Unity Catalog required:** Lakeflow Connect requires Unity Catalog — not available with the legacy Hive metastore.
 - **Schema evolution:** New columns automatically added. Deleted source columns retained in Delta with `null` values — filter downstream as needed. Column renames in the source produce a new column in Delta; the prior column persists with its historical values. Downstream pipelines must account for both the old and new column names after a rename.
 - **Asset Bundles CI/CD:** Define pipelines in `databricks.yml` and deploy via the Databricks CLI for source control and environment promotion.
