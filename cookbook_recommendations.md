@@ -50,7 +50,6 @@ data_architecture/
 |--------|-------------|
 | Auto Loader | Incrementally ingest files from cloud storage (ADLS, S3, GCS) using `cloudFiles` format. Includes checkpoint configuration, schema inference, and schema evolution handling. |
 | COPY INTO | Idempotent, SQL-based batch ingestion from cloud storage into Delta tables. Covers idempotency guarantees and re-run behavior. |
-| SFTP | Receive files from a partner or vendor system via SFTP. |
 
 #### Streaming Ingestion
 | Method | Description |

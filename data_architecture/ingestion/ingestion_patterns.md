@@ -1,7 +1,7 @@
 # Ingestion Architectural Patterns
 ## Databricks
 
-> **Scope:** This document covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, Structured Streaming, JDBC, SFTP connector, Lakeflow Connect, and Databricks workflows. For multi-hop pipeline orchestration using Lakeflow Spark Declarative Pipelines (SDP), see `../processing/processing_patterns.md`.
+> **Scope:** This document covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, Structured Streaming, JDBC, Lakeflow Connect, and Databricks workflows. For multi-hop pipeline orchestration using Lakeflow Spark Declarative Pipelines (SDP), see `../processing/processing_patterns.md`.
 
 ---
 
@@ -23,7 +23,6 @@ A landing zone is a cloud storage location (ADLS Gen2, S3, or GCS) where raw dat
 
 - **File export pipelines** (Azure Data Factory, AWS Glue, Informatica, Talend) that extract from OLTP or ERP systems and write files to cloud storage
 - **SaaS application exports** (Salesforce data export, Workday report delivery) scheduled to drop CSV or Parquet files to a storage account
-- **SFTP push patterns** where partner or vendor systems push files to a Databricks-managed SFTP endpoint, which then lands them in cloud storage
 - **Direct writes from IoT or application services** that write events or snapshots to cloud storage buckets
 
 > **Scope note:** Configuration of upstream delivery tools (Azure Data Factory, SFTP servers, SaaS export schedules) is outside the scope of this cookbook. This document covers what Databricks does with data once it is in the landing zone — or when a landing zone is not needed at all.
@@ -36,7 +35,6 @@ The following ingestion methods require data to be present in cloud storage befo
 |--------|-----------------------|--------|
 | **Auto Loader** | Yes | Reads file paths from ADLS/S3/GCS; upstream must deposit files there first |
 | **COPY INTO** | Yes | Reads from a cloud storage path; files must already be present at that path |
-| **SFTP Native Connector** | No | The native SFTP connector reads directly from the SFTP server into Spark — no intermediate cloud storage staging step is required. The GA alternative (paramiko + Auto Loader) does require a landing zone. |
 
 For these methods, the landing zone is the contractual boundary between the upstream delivery system and the Databricks pipeline. The upstream system writes; Databricks reads. Neither side needs to know about the other's schedule.
 
@@ -84,7 +82,6 @@ Databricks supports multiple ingestion methods, each suited to different latency
 | **Structured Streaming** | Sub-minute latency ingestion from Kafka, Azure Event Hubs, or Kinesis; event-driven architectures where consumer lag must be minimised; stateful aggregations with watermarking | The source is cloud storage files rather than a message bus; your team lacks the operational capability to manage streaming job recovery |
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
 | **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
-| **SFTP (Native Connector)** | Receiving files from partner or vendor systems that deliver via SFTP; organisations that want a managed connector without custom Python scripting | ⚠️ **Public preview as of March 2026** — not recommended for critical production workloads without validating preview stability; not suitable where the source SFTP server has connectivity restrictions incompatible with Databricks-managed egress |
 | **Lakeflow Connect** | Managed ingestion from SaaS applications and databases where building a custom connector is not justified; teams that want a fully native Databricks-managed pipeline with Unity Catalog governance and serverless compute. GA as of March 2026: Salesforce, Workday, SQL Server. See the [connector catalogue](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list including preview connectors. | Sources not yet on the Lakeflow Connect connector catalogue; organisations with strict data residency requirements that need careful evaluation of data paths |
 
 ### Trade-offs
@@ -101,7 +98,6 @@ Lakeflow Connect is the preferred choice for new SaaS ingestion implementations 
 - [COPY INTO documentation — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-copy-into)
 - [Structured Streaming — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/)
 - [Lakeflow Connect — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/)
-- [SFTP ingestion — Azure Databricks (public preview)](https://learn.microsoft.com/en-us/azure/databricks/ingestion/sftp)
 - `ingestion_cookbook.md` — step-by-step implementation for each method
 
 ---
@@ -156,7 +152,6 @@ Schema evolution is the process by which a data pipeline handles changes to the 
 | **Structured Streaming** | Limited | Unknown columns dropped by default. Schema changes after stream start cause failure unless the checkpoint is deleted and the stream restarted. |
 | **Notebook Pattern** | Manual | Schema must be updated manually in the notebook before the next run. |
 | **JDBC** | No automatic evolution | New source columns require a manual `ALTER TABLE ... ADD COLUMN` on the Delta target, or `mergeSchema` enabled on the write. |
-| **SFTP (Native Connector)** | Depends on format | Follows the underlying file format reader. JSON with compatible `schemaEvolutionMode` options behaves similarly to Auto Loader. CSV with inferred schema may fail on new columns. |
 | **Lakeflow Connect** | Yes — automatic | New source columns automatically added on the next pipeline run. Prior rows have `null` for the new column. Deleted source columns retained in Delta with `null`. |
 
 ### Recommendations

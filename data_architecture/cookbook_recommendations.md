@@ -40,7 +40,6 @@ Step-by-step implementation guide for all native ingestion methods. Each method 
 |---------|------------------------------|
 | File Ingestion — Auto Loader | Incrementally ingest files from ADLS/S3/GCS into Delta Lake without reprocessing |
 | File Ingestion — COPY INTO | Perform a one-time or ad hoc bulk load from files already in cloud storage |
-| File Ingestion — SFTP | Receive files from a partner or vendor system via SFTP |
 | Streaming Ingestion — Structured Streaming | Consume events from Kafka, Azure Event Hubs, or Kinesis at low latency |
 | Database Ingestion — JDBC | Extract from a relational database (SQL Server, PostgreSQL, MySQL, Oracle) |
 | Managed Ingestion — Lakeflow Connect | Ingest from SaaS applications (Salesforce, Workday, ServiceNow) |

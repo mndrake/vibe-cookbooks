@@ -1,7 +1,7 @@
 # Ingestion Cookbook
 ## Databricks
 
-> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, SFTP connector, Structured Streaming, JDBC, and Lakeflow Connect. For multi-hop pipeline orchestration using Lakeflow Spark Declarative Pipelines (SDP), see `../processing/processing_cookbook.md`.
+> **Scope:** This cookbook covers ingestion using Databricks platform features only — Auto Loader, COPY INTO, Structured Streaming, JDBC, and Lakeflow Connect. For multi-hop pipeline orchestration using Lakeflow Spark Declarative Pipelines (SDP), see `../processing/processing_cookbook.md`.
 
 ---
 
@@ -19,11 +19,10 @@ The architectural rationale for choosing between methods is covered in `ingestio
 |----------------------|-----------|
 | Files arriving in cloud storage (continuous) | [File Ingestion — Auto Loader](#file-ingestion--auto-loader) |
 | Files arriving on a schedule (batch) | [File Ingestion — COPY INTO](#file-ingestion--copy-into) |
-| SFTP partner delivery | [File Ingestion — SFTP](#file-ingestion--sftp-native-databricks-connector) |
 | Kafka / Azure Event Hubs | [Streaming Ingestion — Structured Streaming](#streaming-ingestion--structured-streaming) |
 | Relational database (SQL Server, PostgreSQL) | [Database Ingestion — JDBC](#database-ingestion--jdbc) |
 | SaaS application (Salesforce, Workday) | [Managed Ingestion — Lakeflow Connect](#managed-ingestion--lakeflow-connect) |
-| Any other source (ERP, mainframe, on-premises, custom API) | Use ADF, Azure Glue, or another orchestration tool to land files in an ADLS Gen2 container, then apply [File Ingestion — Auto Loader](#file-ingestion--auto-loader) (continuous/incremental) or [File Ingestion — COPY INTO](#file-ingestion--copy-into) (scheduled batch). See [Sources Not Covered in This Cookbook](#sources-not-covered-in-this-cookbook). |
+| Any other source (ERP, mainframe, on-premises, SFTP partner delivery, custom API) | Use ADF or another orchestration tool to land files in an ADLS Gen2 container, then apply [File Ingestion — Auto Loader](#file-ingestion--auto-loader) (continuous/incremental) or [File Ingestion — COPY INTO](#file-ingestion--copy-into) (scheduled batch). See [Sources Not Covered in This Cookbook](#sources-not-covered-in-this-cookbook). |
 
 ---
 
@@ -38,7 +37,6 @@ All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or lat
 | Feature | Minimum DBR |
 |---------|-------------|
 | Auto Loader `schemaEvolutionMode`, `trigger(availableNow=True)` | 11.3 LTS |
-| SFTP native connector | 13.3 LTS |
 | Liquid Clustering (referenced in performance cookbook) | 13.3 LTS |
 
 **Recommendation:** Use **DBR 14.3 LTS or later** for new workloads — it is the current long-term support release as of March 2026 and includes all features referenced in this cookbook.
@@ -116,7 +114,6 @@ All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...
 ```bash
 # Databricks-managed scope fallback (use AKV-backed scopes in production)
 databricks secrets create-scope --scope jdbc-secrets
-databricks secrets create-scope --scope sftp-secrets
 databricks secrets create-scope --scope eventhubs-secrets
 
 # Add a secret (prompts for value — value is never stored in shell history)
@@ -276,85 +273,6 @@ FROM main.bronze.sales_transactions;
 #### See Also
 
 - [COPY INTO — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/delta-copy-into)
-
----
-
-### File Ingestion — SFTP (Native Databricks Connector)
-
-> ⚠️ **Public preview as of March 2026.** Not recommended for critical production workloads without validating preview stability in your environment. Monitor the [release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/) for the GA announcement.
-
-The Databricks native SFTP connector reads files directly from an SFTP server into a Spark DataFrame or Delta table, without custom Python file-transfer code or an intermediate cloud storage landing zone.
-
-#### Problem
-
-A partner delivers CSV files to an SFTP server nightly. The files must be ingested into a bronze Delta table without building a custom download script or provisioning an intermediate ADLS landing zone.
-
-#### Solution
-
-Use `spark.read.format("sftp")` (batch) or `spark.readStream.format("sftp")` (incremental) with credentials in Databricks Secrets.
-
-##### Python
-
-```python
-sftp_host = "sftp.partner.example.com"
-sftp_user = dbutils.secrets.get(scope="sftp-secrets", key="sftp-user")
-sftp_password = dbutils.secrets.get(scope="sftp-secrets", key="sftp-password")
-
-# Batch read
-df = (
-    spark.read.format("sftp")
-    .option("host", sftp_host)
-    .option("username", sftp_user)
-    .option("password", sftp_password)
-    .option("fileType", "csv")
-    .option("header", "true")
-    .option("inferSchema", "true")
-    .option("path", "/outbound/orders/")
-    .load()
-)
-df.write.format("delta").mode("append").saveAsTable("main.bronze.partner_orders")
-
-# Incremental read with checkpoint
-checkpoint_path = "abfss://checkpoints@mystorageaccount.dfs.core.windows.net/sftp_partner_orders"
-(
-    spark.readStream.format("sftp")
-    .option("host", sftp_host)
-    .option("username", sftp_user)
-    .option("password", sftp_password)
-    .option("fileType", "csv")
-    .option("header", "true")
-    .option("path", "/outbound/orders/")
-    .load()
-    .writeStream
-    .format("delta")
-    .option("checkpointLocation", checkpoint_path)
-    .trigger(availableNow=True)
-    .toTable("main.bronze.partner_orders")
-)
-```
-
-##### SQL
-
-SQL does not support direct SFTP reads. Use Python to land data into Delta, then query with SQL:
-
-```sql
-SELECT
-    COUNT(*)        AS total_rows,
-    MIN(order_date) AS earliest_order,
-    MAX(order_date) AS latest_order
-FROM main.bronze.partner_orders;
-```
-
-#### Discussion and Concerns
-
-- **Public preview:** As of March 2026, this connector is in public preview ([docs](https://learn.microsoft.com/en-us/azure/databricks/ingestion/sftp)). Test in non-production before using in critical pipelines.
-- **GA alternative:** Download files from SFTP to ADLS using `paramiko`, then process from cloud storage with Auto Loader or COPY INTO — this two-stage approach is fully GA.
-- **Batch mode re-run safety:** The batch `spark.read.format("sftp")` path has no built-in file tracking. If the job fails and is retried, or is triggered manually, it re-reads all SFTP files and appends them again, creating duplicate rows. For production workloads, prefer the incremental (streaming) path shown above — the checkpoint tracks processed files. If batch is required, add a post-load deduplication step: `DELETE FROM main.bronze.partner_orders WHERE order_id IN (SELECT order_id FROM main.bronze.partner_orders GROUP BY order_id HAVING COUNT(*) > 1 AND _ingested_at < MAX(_ingested_at))`, or use `MERGE` with `ROW_NUMBER()` to keep only the latest record per key.
-- **Partial files:** SFTP sources do not provide atomic delivery guarantees. A common convention is for the upstream system to write a zero-byte `.done` file (e.g., `orders_20260314.done`) after completing the corresponding data file upload. The Databricks pipeline lists the SFTP directory at the start of each run, identifies data files that have a matching `.done` file present, and processes only those pairs. The native SFTP connector does not implement this filter natively — it requires a pre-processing step (e.g., a Python Databricks Workflows task) that lists the directory, identifies complete pairs, and passes the confirmed file list to the read task. The GA alternative (paramiko → ADLS → Auto Loader) allows the `.done` check to be performed before files are moved to the landing zone.
-
-#### See Also
-
-- [SFTP ingestion — Azure Databricks (public preview)](https://learn.microsoft.com/en-us/azure/databricks/ingestion/sftp)
 
 ---
 
