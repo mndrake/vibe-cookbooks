@@ -94,8 +94,8 @@ All credential-dependent examples use `dbutils.secrets.get(scope="...", key="...
 
 ```bash
 # Databricks-managed scope fallback (use AKV-backed scopes in production)
-databricks secrets create-scope --scope jdbc-secrets
-databricks secrets create-scope --scope eventhubs-secrets
+databricks secrets create-scope jdbc-secrets
+databricks secrets create-scope eventhubs-secrets
 
 # Add a secret (enter value at the interactive prompt — never stored in shell history)
 # Syntax: databricks secrets put-secret <scope> <key>
@@ -313,7 +313,7 @@ This section covers Azure Event Hubs using the `eventhubs` Spark connector. Stru
 
 Structured Streaming tracks the last committed source offset in a checkpoint directory. On restart, it resumes from the last committed offset. When writing to Delta Lake with a durable checkpoint, each message from Event Hubs is written to Delta once, provided the source retains messages at that offset. If the Event Hub retention window expires before the stream restarts, messages between the last checkpoint offset and the earliest available offset are unrecoverable. **Detecting the gap:** when the checkpoint offset is older than the Event Hub retention window, the connector may raise an error (e.g., `OFFSET_OUT_OF_RANGE`) or, depending on connector configuration, resume from the earliest available offset without an error — meaning data loss can be silent. After any extended stream outage, compare the row count and latest `enqueuedTime` in the Delta table against the Event Hub's earliest available offset and message count (visible in the Azure portal under **Event Hubs namespace → your Event Hub → Metrics**) to confirm no gap exists. **Recovery:** messages that fell outside the retention window cannot be re-read from Event Hubs. If [Event Hubs Capture](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-capture-overview) is enabled, backfill the gap using COPY INTO or Auto Loader targeting the Avro capture files (`FILEFORMAT = AVRO`) — see the Capture Discussion bullet below for path details and setup guidance. If no secondary source exists, document the loss, update downstream row count SLAs accordingly, and increase the Event Hub retention period to reduce the risk of recurrence. The exactly-once guarantee applies to the Spark-to-Delta write layer; it does not prevent duplicate messages produced upstream of the message bus.
 
-> **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) diagrams the micro-batch execution model, offset tracking, and checkpoint recovery. [Azure Event Hubs — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/streaming-event-hubs) covers Event Hubs connection options and consumer group configuration.
+> **Architecture diagram:** [Structured Streaming programming guide — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/structured-streaming/) diagrams the micro-batch execution model, offset tracking, and checkpoint recovery. [azure-event-hubs-spark PySpark Structured Streaming guide](https://github.com/Azure/azure-event-hubs-spark/blob/master/docs/PySpark/structured-streaming-pyspark.md) documents the `eventhubs` connector options used in this section, including `eventhubs.connectionString`, `eventhubs.consumerGroup`, and the `EventHubsUtils.encrypt` call.
 
 #### Problem
 
@@ -398,7 +398,7 @@ ORDER BY 1 DESC;
 
 Spark's JDBC data source reads directly from relational databases over a JDBC connection. It is the standard pattern when data cannot be exported to cloud storage first and no CDC feed is available.
 
-> **Architecture diagram:** [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/external-data/jdbc) includes a diagram of parallel partition reads showing how `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions` split the source table into concurrent range queries.
+> **Partition options reference:** [JDBC data source — Apache Spark](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html) documents all JDBC options including `partitionColumn`, `lowerBound`, `upperBound`, and `numPartitions`.
 
 #### Problem
 
@@ -507,7 +507,7 @@ LIMIT 20;
 
 #### See Also
 
-- [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/external-data/jdbc)
+- [JDBC data source — Apache Spark](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html)
 - [DeltaTable Python API — Delta Lake](https://docs.delta.io/api/latest/python/spark/)
 
 ---
