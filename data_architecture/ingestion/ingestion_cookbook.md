@@ -9,6 +9,8 @@
 
 This cookbook provides practical, step-by-step guidance for data ingestion on Databricks using only the Databricks native toolchain. It covers file ingestion, streaming ingestion, database ingestion, and managed ingestion.
 
+> **Companion document:** Before selecting an ingestion method, review `ingestion_patterns.md` in the same directory. It covers method selection criteria, batch vs. streaming trade-offs, schema evolution strategy, and architectural design considerations. For multi-hop pipeline orchestration (bronze → silver → gold) using Lakeflow Spark Declarative Pipelines, see `../processing/processing_patterns.md`.
+
 > **Data is stored in ADLS Gen2, not Databricks.** Databricks is a compute and orchestration platform; all table data, checkpoints, and Delta files are stored in your own Azure Data Lake Storage Gen2 account. This is why every ingestion method in this cookbook requires an ADLS Gen2 storage account and a Unity Catalog external location to be configured before data can be written. See [Azure Databricks high-level architecture](https://learn.microsoft.com/en-us/azure/databricks/getting-started/high-level-architecture) for details.
 
 **Quick navigation: jump to your ingestion method:**
@@ -20,7 +22,7 @@ This cookbook provides practical, step-by-step guidance for data ingestion on Da
 | Kafka / Azure Event Hubs | [Streaming Ingestion: Structured Streaming](#streaming-ingestion-structured-streaming) |
 | Relational database (SQL Server, PostgreSQL) | [Database Ingestion: JDBC](#database-ingestion-jdbc) |
 | SaaS application (Salesforce, Workday) | [Managed Ingestion: Lakeflow Connect](#managed-ingestion-lakeflow-connect) |
-| Any other source (ERP, mainframe, on-premises, SFTP partner delivery, custom API) | Use ADF or another orchestration tool to land files in an ADLS Gen2 container, then apply [File Ingestion: Auto Loader](#file-ingestion-auto-loader) (continuous/incremental) or [File Ingestion: COPY INTO](#file-ingestion-copy-into) (scheduled batch). See [Sources Not Covered in This Cookbook](#sources-not-covered-in-this-cookbook). |
+| Any other source (ERP, mainframe, on-premises, SFTP partner delivery, custom API) | Use ADF or another orchestration tool to land files in an ADLS Gen2 container, then apply [File Ingestion: Auto Loader](#file-ingestion-auto-loader) (incremental with checkpoint state) or [File Ingestion: COPY INTO](#file-ingestion-copy-into) (idempotent SQL-based load). Both support scheduled and continuous trigger modes. See [Sources Not Covered in This Cookbook](#sources-not-covered-in-this-cookbook). |
 
 ---
 
@@ -189,11 +191,17 @@ source_path = "abfss://raw@mystorageaccount.dfs.core.windows.net/orders/"
 Auto Loader is configured in Python. Query the resulting Delta table with SQL:
 
 ```sql
--- Validate records landed correctly
+-- Validate records landed correctly.
+-- Note: _metadata is a virtual column available during the streaming READ; it is not
+-- automatically written to the Delta table. To persist file metadata (e.g. file path,
+-- modification time), explicitly select it in the write path:
+--   .select("*", col("_metadata.file_path").alias("source_file"),
+--                col("_metadata.file_modification_time").alias("file_modified_at"))
+-- The queries below validate the landed data without requiring _metadata in Delta.
 SELECT
-    COUNT(*) AS total_rows,
-    MIN(_metadata.file_modification_time) AS earliest_file,
-    MAX(_metadata.file_modification_time) AS latest_file
+    COUNT(*)     AS total_rows,
+    MIN(order_date) AS earliest_order_date,
+    MAX(order_date) AS latest_order_date
 FROM main.bronze.orders;
 
 -- Inspect rescued data (if schemaEvolutionMode = 'rescue')
@@ -283,10 +291,14 @@ COPY_OPTIONS (
   'mergeSchema' = 'false'
 );
 
--- Validate: check row count and latest load timestamp
+-- Validate: check row count and latest loaded sale date.
+-- Note: _metadata is a virtual column available during COPY INTO reads but is not
+-- automatically written to the Delta table. Use the table's own timestamp/date
+-- columns to validate the load window rather than _metadata.
 SELECT
-    COUNT(*) AS rows_loaded,
-    MAX(_metadata.file_modification_time) AS latest_file
+    COUNT(*)         AS rows_loaded,
+    MIN(sale_date)   AS earliest_sale_date,
+    MAX(sale_date)   AS latest_sale_date
 FROM main.bronze.sales_transactions;
 ```
 
