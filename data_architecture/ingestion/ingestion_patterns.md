@@ -78,7 +78,7 @@ Databricks supports multiple ingestion methods, each suited to different latency
 | Method | Best For | Avoid When |
 |--------|----------|------------|
 | **Auto Loader** | Continuous or scheduled file arrival in cloud storage (ADLS, S3, GCS); large file volumes where checkpoint-based state tracking is important; tables that require schema evolution over time | You need sub-minute event-level latency from a message bus; files are delivered once via a one-off process |
-| **COPY INTO** | Scheduled batch loads from a known cloud storage path; scenarios where idempotency is critical and re-runs must not create duplicates; simple batch pipelines without schema evolution needs | You need schema to auto-evolve as new columns arrive; you need automatic state management without a checkpoint directory |
+| **COPY INTO** | Scheduled batch loads from a known cloud storage path; scenarios where idempotency is critical and re-runs must not create duplicates; simple batch pipelines without schema evolution needs. **Note:** Databricks documentation now labels COPY INTO as a legacy feature and recommends Streaming Tables for new SQL-based ingestion workloads. COPY INTO remains functional and supported, but evaluate Streaming Tables for new designs. | You need schema to auto-evolve as new columns arrive; you need automatic state management without a checkpoint directory |
 | **Structured Streaming** | Sub-minute latency ingestion from Kafka, Azure Event Hubs, or Kinesis; event-driven architectures where consumer lag must be minimised; stateful aggregations with watermarking | The source is cloud storage files rather than a message bus; your team lacks the operational capability to manage streaming job recovery |
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
 | **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
@@ -145,7 +145,7 @@ Schema evolution is the process by which a data pipeline handles changes to the 
 
 | Method | Schema Evolution Support | Behaviour on Schema Change |
 |--------|--------------------------|---------------------------|
-| **Auto Loader** | Yes — configurable via `cloudFiles.schemaEvolutionMode` | `addNewColumns`: new columns added automatically. `rescue`: unexpected columns captured in `_rescued_data`. `failOnNewColumns`: pipeline fails on new column (useful for controlled environments). `none`: new columns silently dropped. |
+| **Auto Loader** | Yes — configurable via `cloudFiles.schemaEvolutionMode` | `addNewColumns`: stream **fails** on first encounter of a new column, Auto Loader updates the stored schema at `schemaLocation`, and the stream must be restarted — the following run succeeds with the new column included. In a Databricks Job, this means one failure per new column is expected and normal; alert on consecutive failures. `rescue`: unexpected columns captured in `_rescued_data` without failing. `failOnNewColumns`: pipeline fails on new column (useful for controlled silver/gold environments). `none`: new columns silently dropped. |
 | **COPY INTO** | Limited — new columns can be added with `mergeSchema = 'true'` in `COPY_OPTIONS` | Without `mergeSchema`, columns not in the target schema are silently dropped and missing columns are written as `null`. With `mergeSchema = 'true'` in `COPY_OPTIONS`, new columns in source files are automatically added to the target table. This must be explicitly set on each run; there is no automatic detection. |
 | **Structured Streaming** | Limited | Unknown columns dropped by default. Schema changes after stream start cause failure unless the checkpoint is deleted and the stream restarted. |
 | **Notebook Pattern** | Manual | Schema must be updated manually in the notebook before the next run. |
@@ -187,7 +187,7 @@ Increasing `numPartitions` improves throughput on the Databricks side but places
 
 ### See Also
 
-- [JDBC ingestion — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/connect/external-systems/jdbc)
+- [Query databases using JDBC — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/external-data/jdbc)
 - `ingestion_cookbook.md` — JDBC implementation with partition tuning examples
 
 ---

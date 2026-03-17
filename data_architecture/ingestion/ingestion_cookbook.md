@@ -463,7 +463,12 @@ df = (
     .option("user", jdbc_user)
     .option("password", jdbc_password)
     .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
-    .option("query", f"SELECT * FROM dbo.orders WHERE updated_at >= '{watermark}'")
+    # Use dbtable with an inline subquery — NOT .option("query", ...) — when combining
+    # row filtering with partitionColumn. Spark raises IllegalArgumentException if
+    # both "query" and "partitionColumn" are specified together. The subquery must be
+    # wrapped in parentheses and given an alias; Spark wraps it again per partition as:
+    #   SELECT * FROM (<subquery>) AS orders_incremental WHERE order_id BETWEEN lo AND hi
+    .option("dbtable", f"(SELECT * FROM dbo.orders WHERE updated_at >= '{watermark}') AS orders_incremental")
     .option("partitionColumn", "order_id")
     .option("lowerBound", lower_bound)
     .option("upperBound", upper_bound)
@@ -521,7 +526,7 @@ LIMIT 20;
 - **MERGE cardinality:** Delta raises a `MERGE_CARDINALITY_VIOLATION` error if the MERGE `ON` condition matches multiple target rows to a single source row. This happens when `partitionColumn` is not a unique key of the source table. Verify that the column used in `t.order_id = s.order_id` is a unique key before using it as both the partition column and the merge key.
 - **Hard deletes are invisible:** Incremental JDBC based on `updated_at` will not detect deleted rows. Use a CDC tool (Debezium) if delete propagation is required.
 - **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL, install the `org.postgresql:postgresql:<version>` Maven library via the cluster Libraries tab (see [PostgreSQL JDBC releases](https://jdbc.postgresql.org/download/) for the current version). For MySQL, install `com.mysql:mysql-connector-j:<version>`. **Installing a driver on a running cluster requires a cluster restart before the library is available.** Running without restarting fails with `ClassNotFoundException`, not a connection error.
-- **`query` and `partitionColumn` interaction:** When `query` is specified alongside `partitionColumn`, Spark wraps the query as a subquery for each partition: `SELECT * FROM (<your query>) WHERE order_id BETWEEN <lower> AND <upper>`. SQL Server handles this correctly. If your JDBC driver does not support subquery wrapping, remove the `query` option and use `.option("dbtable", "dbo.orders")` combined with a database view that applies the filter, or remove the partition options and accept a single-partition sequential read.
+- **`query` and `partitionColumn` cannot be used together:** Spark raises `IllegalArgumentException: Options 'query' and 'partitionColumn' can not be specified together` if both are set in the same read. To combine row filtering with parallel partitioned reads, use `dbtable` with an inline subquery and alias: `.option("dbtable", "(SELECT * FROM dbo.orders WHERE ...) AS orders_incremental")`. Spark then wraps the subquery per partition: `SELECT * FROM (<subquery>) AS orders_incremental WHERE order_id BETWEEN <lower> AND <upper>`. The subquery alias is required; omitting it produces a syntax error on most JDBC drivers. SQL Server and PostgreSQL both support this pattern; some older JDBC drivers may not, in which case use a database view to apply the filter and point `dbtable` at the view name directly.
 
 #### See Also
 
