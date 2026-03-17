@@ -36,6 +36,17 @@ This project provides practical, step-by-step data architecture cookbooks for Da
 - [Azure Databricks Documentation](https://learn.microsoft.com/en-us/azure/databricks/)
 - [Databricks Tech Talks & Notebooks](https://www.databricks.com/resources/webinar)
 
+## Reviewing Critical or Accuracy Items
+
+When given a critical or accuracy review task (e.g., fact-checking, validating technical claims, reviewing deprecated features, or assessing whether content is still current):
+
+1. **Analyze the item in context.** Consider the target audience (data architects, engineers) and the purpose of the document (practical, actionable guidance for Databricks on Azure).
+2. **Use web search when needed.** If the accuracy of a claim cannot be determined from existing knowledge — particularly for version-specific features, GA/preview status, API changes, or newly released capabilities — perform a web search against official Databricks or Azure documentation to verify.
+3. **Apply reasonable judgment.** Not every minor wording difference warrants a change. Use the following criteria:
+   - **Change is warranted** if the content is factually incorrect, refers to a deprecated/removed feature, or would mislead the target audience.
+   - **No change needed** if the content is still accurate, is intentionally simplified for the audience, or reflects an acceptable trade-off between precision and readability. In this case, briefly state why no change is required.
+4. **Document the rationale.** Whether or not a change is made, state the finding and the reasoning so the reviewer understands the decision.
+
 ## Contribution
 
 Follow the cookbook structure and guidelines above when adding new content. Ensure all examples are tested and working before submitting.
