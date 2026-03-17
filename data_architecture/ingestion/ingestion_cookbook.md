@@ -321,6 +321,8 @@ Order events are published to Azure Event Hubs at high volume and must be writte
 #### Solution
 
 > **Prerequisite: install the Azure Event Hubs connector:** The `eventhubs` format requires the `com.microsoft.azure:azure-eventhubs-spark_2.12:<version>` Maven library installed on the cluster before running the code below. Install it via **Compute → your cluster → Libraries → Install New → Maven**. Match the version to your Databricks Runtime's Scala version; see [azure-eventhubs-spark releases](https://github.com/Azure/azure-event-hubs-spark/releases) for the latest compatible version. Without this library, the code below fails immediately with `DataSourceNotFoundException: Failed to find data source: eventhubs`.
+>
+> **Prerequisite: create a dedicated consumer group:** Create the consumer group referenced in `eventhubs.consumerGroup` in the Azure portal (**Event Hubs namespace → your Event Hub → Consumer groups → Add**) before starting the stream. If two consumers share `$Default`, one silently receives zero events with no error raised.
 
 Use `spark.readStream.format("eventhubs")` with a durable checkpoint.
 
@@ -406,6 +408,8 @@ An Azure SQL Database must be ingested into Delta Lake on a scheduled basis. The
 #### Solution
 
 Use `spark.read.format("jdbc")` with partition configuration. Write to Delta using MERGE for incremental loads or overwrite for full loads.
+
+> **Prerequisite: create the target table before the first load:** `DeltaTable.forName()` raises `AnalysisException` if the table does not exist. Run the `CREATE TABLE IF NOT EXISTS` DDL in the SQL section below before the first load, or add `spark.sql("CREATE TABLE IF NOT EXISTS main.bronze.orders ...")` at the top of your Python script.
 
 ##### Python
 
@@ -651,4 +655,4 @@ The landing zone acts as the contractual boundary between the upstream extractio
 | Structured Streaming resumes with offset gap or `OFFSET_OUT_OF_RANGE` error | Stream was paused longer than the Event Hub retention window; messages in the gap are no longer available | Detect the gap: compare `MAX(enqueuedTime)` in the Delta table against the Event Hub's earliest available offset in the Azure portal. If Event Hubs Capture is enabled, backfill by pointing COPY INTO or Auto Loader at the Avro capture files (`FILEFORMAT = AVRO`; path pattern: `{Namespace}/{EventHub}/{PartitionId}/{Year}/{Month}/{Day}/...`). If Capture is not enabled, the messages are unrecoverable; document the data loss and enable Capture going forward. See the Event Hubs Capture Discussion bullet above for setup details. |
 | Lakeflow Connect authentication error | OAuth token expired or credentials rotated | Update connection credentials in Lakeflow Connect configuration |
 | Lakeflow Connect lands duplicate rows | Connector backfill triggered (e.g., after reconnection or pipeline reset) | Deduplicate in silver using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY _databricks_synced DESC)`; `_databricks_synced` is the Lakeflow Connect sync timestamp column present on all replicated tables |
-| Auto Loader / COPY INTO encounters malformed or corrupt files | Source file contains rows with unexpected types, extra fields, or corrupt encoding | For Auto Loader: set `cloudFiles.schemaEvolutionMode = 'rescue'` so unexpected fields land in `_rescued_data` rather than failing the stream. For COPY INTO: add `'badRecordsPath' = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/<table>/'` to `COPY_OPTIONS` to route bad records to a container **outside** the source data hierarchy (e.g., an `ops` container); placing bad records in the source container causes COPY INTO to attempt re-ingestion of those files on subsequent runs. Monitor the rescue path and bad records path as part of your pipeline health checks. |
+| Auto Loader / COPY INTO encounters malformed or corrupt files | Source file contains rows with unexpected types, extra fields, or corrupt encoding | For Auto Loader: set `cloudFiles.schemaEvolutionMode = 'rescue'` so unexpected fields land in `_rescued_data` rather than failing the stream. For COPY INTO: add `'badRecordsPath' = 'abfss://ops@mystorageaccount.dfs.core.windows.net/bad_records/<table>/'` to `FORMAT_OPTIONS` to route bad records to a container **outside** the source data hierarchy (e.g., an `ops` container); placing bad records in the source container causes COPY INTO to attempt re-ingestion of those files on subsequent runs. Monitor the rescue path and bad records path as part of your pipeline health checks. |

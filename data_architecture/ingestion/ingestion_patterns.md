@@ -200,7 +200,7 @@ Managed ingestion patterns handle extraction from source systems via a connector
 
 ### Lakeflow Connect
 
-As of March 2026, Lakeflow Connect is generally available for Salesforce, Workday, and SQL Server, with additional connectors available in preview. Characteristics:
+As of March 2026, Lakeflow Connect is generally available for Salesforce, Workday, SQL Server, ServiceNow, and Google Analytics, with additional connectors available in preview. Characteristics:
 
 - **Compute:** Runs on Databricks serverless compute. Data does not transit third-party infrastructure. Requires Unity Catalog to be enabled — lineage, access control, and audit are applied to ingested tables via Unity Catalog governance.
 - **Schema evolution:** New source columns are automatically added to the Delta table schema on the next pipeline run. Column deletions in the source are not propagated — the column is retained in Delta with `null` values for rows synced after the deletion. Column renames produce a new column; the prior column persists with historical values. Downstream pipelines must account for both cases.
