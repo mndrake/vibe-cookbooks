@@ -49,7 +49,7 @@ Direct ingestion (JDBC, Lakeflow Connect, Streaming) removes the raw file audit 
 | Method | Best For | Avoid When |
 |--------|----------|------------|
 | **Auto Loader** | Continuous or scheduled file arrival in cloud storage (ADLS, S3, GCS); large file volumes where checkpoint-based state tracking is important; tables that require schema evolution over time | You need sub-minute event-level latency from a message bus; files are delivered once via a one-off process |
-| **COPY INTO** | Scheduled batch loads from a known cloud storage path; scenarios where idempotency is critical and re-runs must not create duplicates; simple batch pipelines without schema evolution needs. **Note:** Databricks documentation now labels COPY INTO as a legacy feature and recommends Streaming Tables for new SQL-based ingestion workloads. COPY INTO remains functional and supported, but evaluate Streaming Tables for new designs. | You need schema to auto-evolve as new columns arrive; you need automatic state management without a checkpoint directory |
+| **COPY INTO** | Scheduled batch loads from a known cloud storage path; scenarios where idempotency is critical and re-runs must not create duplicates; simple batch pipelines without schema evolution needs. **Note:** Databricks documentation now labels COPY INTO as a legacy feature and recommends Streaming Tables for new SQL-based ingestion workloads. COPY INTO remains functional and supported, but evaluate Streaming Tables for new designs. Streaming Tables are Delta tables continuously updated from a streaming source, defined declaratively using Lakeflow Spark Declarative Pipelines; see [Streaming Tables — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/streaming-tables). | You need schema to auto-evolve as new columns arrive; you need automatic state management without a checkpoint directory |
 | **Structured Streaming** | Sub-minute latency ingestion from Kafka, Azure Event Hubs, or Kinesis; event-driven architectures where consumer lag must be minimised; stateful aggregations with watermarking | The source is cloud storage files rather than a message bus; your team lacks the operational capability to manage streaming job recovery |
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
 | **JDBC** | Ingesting data directly from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) where cloud storage is not the source; incremental or full extract from OLTP systems | Source data volumes are very large and partition-based parallelism cannot be applied; real-time latency requirements (JDBC is a batch-pull mechanism) |
@@ -180,8 +180,9 @@ All examples in this cookbook require **Databricks Runtime (DBR) 13.3 LTS or lat
 | Auto Loader `schemaEvolutionMode`, `trigger(availableNow=True)` | 10.4 LTS |
 | `trigger(once=True)` deprecated; use `trigger(availableNow=True)` | 11.3 LTS |
 | Liquid Clustering | 13.3 LTS |
+| Auto Loader managed file events (`cloudFiles.useManagedFileEvents`) | 14.3 LTS |
 
-**Recommendation:** Use **DBR 14.3 LTS or later** for new workloads; it is the current long-term support release as of March 2026 and includes all features referenced in this cookbook.
+**Recommendation:** Use **DBR 14.3 LTS or later** for new workloads. DBR 14.3 LTS adds managed file events support for Auto Loader (`.option("cloudFiles.useManagedFileEvents", "true")`), which removes the need for manual storage event queue setup when using file notification mode. All other examples in this guide run on DBR 13.3 LTS.
 
 ### Cluster Configuration
 
@@ -363,7 +364,7 @@ FROM main.bronze.sales_transactions;
 
 #### Discussion and Concerns
 
-- **COPY INTO vs. Auto Loader:** COPY INTO is simpler: no streaming context, no checkpoint directory, pure SQL. It does not support automatic schema evolution: new columns in source files are silently dropped unless `'mergeSchema' = 'true'` is set in `COPY_OPTIONS`, which adds new columns to the target table but must be explicitly enabled on each run. Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
+- **COPY INTO vs. Auto Loader:** COPY INTO is simpler: no streaming context, no checkpoint directory, pure SQL. It does not support automatic schema evolution: new columns in source files are silently dropped unless `'mergeSchema' = 'true'` is set in `COPY_OPTIONS`, which adds new columns to the target table. This option is **not sticky** — it must be present on every COPY INTO run where schema evolution is desired. If it is omitted from a subsequent run after new columns have arrived, those new columns are silently dropped for that run (columns already added to the target table in prior runs are retained). Auto Loader with `addNewColumns` is the better choice when schema drift is expected.
 - **Directory scanning is not recursive by default:** COPY INTO reads files at the exact path specified. It does **not** recurse into subdirectories unless `'recursiveFileLookup' = 'true'` is added to `FORMAT_OPTIONS`. If files are organized under date-partitioned subdirectories (e.g., `sales/2026/03/15/`, `sales/2026/03/16/`), either enable `recursiveFileLookup` and point COPY INTO at the root path, or point COPY INTO at each subdirectory explicitly. Auto Loader supports recursive path scanning via glob patterns (e.g., `abfss://raw@.../sales/2026/03/**/*.csv`).
 - **`badRecordsPath`:** Routes malformed rows to a separate storage path rather than aborting the entire load. Without it, a single corrupt record fails the full COPY INTO command. Point `badRecordsPath` to a container **outside** the source data hierarchy (e.g., an `ops` container) to avoid COPY INTO attempting to re-ingest the bad record files on subsequent runs. Monitor the bad records path as part of pipeline health checks.
 - **Idempotency scope:** COPY INTO tracks loaded files per Delta table. If the target table is dropped and recreated, COPY INTO reloads all files on the next run.
@@ -391,9 +392,13 @@ Order events are published to Azure Event Hubs at high volume and must be writte
 
 #### Solution
 
-> **Prerequisite: install the Azure Event Hubs connector:** The `eventhubs` format requires the `com.microsoft.azure:azure-eventhubs-spark_2.12:<version>` Maven library installed on the cluster before running the code below. Install it via **Compute → your cluster → Libraries → Install New → Maven**. Match the version to your Databricks Runtime's Scala version; see [azure-eventhubs-spark releases](https://github.com/Azure/azure-event-hubs-spark/releases) for the latest compatible version. Without this library, the code below fails immediately with `DataSourceNotFoundException: Failed to find data source: eventhubs`.
+> **Prerequisite: install the Azure Event Hubs connector:** The `eventhubs` format requires the `com.microsoft.azure:azure-eventhubs-spark_2.12:<version>` Maven library installed on the cluster before running the code below. Install it via **Compute → your cluster → Libraries → Install New → Maven**. Match the version to your Databricks Runtime's Scala version; see [azure-eventhubs-spark releases](https://github.com/Azure/azure-event-hubs-spark/releases) for the latest compatible version. **After installing the library on an already-running cluster, restart the cluster before running the code.** Without a restart the library is not loaded and the code fails with `DataSourceNotFoundException: Failed to find data source: eventhubs`.
 >
 > **Prerequisite: create a dedicated consumer group:** Create the consumer group referenced in `eventhubs.consumerGroup` in the Azure portal (**Event Hubs namespace → your Event Hub → Consumer groups → Add**) before starting the stream. If two consumers share `$Default`, one silently receives zero events with no error raised.
+>
+> **Connection string format:** The value stored in `eventhubs-secrets` must be an Event Hub-level connection string in the format:
+> `Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<policy>;SharedAccessKey=<key>;EntityPath=<eventhub-name>`
+> Obtain it from the Azure portal: **Event Hubs namespace → your Event Hub → Shared access policies → your policy → Connection string–primary key**. The `EntityPath` segment is required; using a namespace-level connection string (without `EntityPath`) causes a runtime error.
 
 Use `spark.readStream.format("eventhubs")` with a durable checkpoint.
 
@@ -451,7 +456,7 @@ ORDER BY 1 DESC;
 #### Discussion and Concerns
 
 - **Checkpoint location:** Store checkpoints on durable cloud storage. Deleting the checkpoint causes the stream to restart from the beginning of the Event Hub retention window.
-- **Event Hubs Capture (recommended):** Enable [Event Hubs Capture](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-capture-overview) in the Azure portal (**Event Hubs namespace → your Event Hub → Capture → On**) to write a durable copy of all messages to ADLS Gen2 in Avro format. Capture is independent of the stream checkpoint; it runs continuously regardless of whether the Spark job is running. If the stream checkpoint offset falls outside the Event Hub retention window, the Capture files provide a backfill path. Capture files land under the path `{Namespace}/{EventHub}/{PartitionId}/{Year}/{Month}/{Day}/{Hour}/{Minute}/{Second}.avro`. To backfill from Capture files, point COPY INTO or Auto Loader at the capture container and specify `FILEFORMAT = AVRO` (not CSV or JSON). Without Capture enabled, messages that fall outside the Event Hub retention window are permanently unrecoverable.
+- **Event Hubs Capture:** Enable [Event Hubs Capture](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-capture-overview) if your stream may be paused for longer than the Event Hub retention window and messages from that period must be recoverable. Capture writes all incoming messages to ADLS Gen2 in Avro format **continuously**, incurring storage costs proportional to message volume regardless of whether the backfill path is ever needed — if your streaming job is stable and rarely paused, Capture adds ongoing storage cost with no operational benefit. When Capture is enabled, configure it in the Azure portal (**Event Hubs namespace → your Event Hub → Capture → On**). Capture is independent of the stream checkpoint; it runs regardless of whether the Spark job is running. Capture files land under the path `{Namespace}/{EventHub}/{PartitionId}/{Year}/{Month}/{Day}/{Hour}/{Minute}/{Second}.avro`. To backfill from Capture files, point COPY INTO or Auto Loader at the capture container and specify `FILEFORMAT = AVRO` (not CSV or JSON). Without Capture enabled, messages that fall outside the Event Hub retention window are permanently unrecoverable.
 - **Consumer groups:** Event Hubs assigns partition ownership per consumer group. If two Spark jobs read from the same Event Hub without specifying a consumer group, both default to `$Default` and compete for partitions; the result is that one job receives no events with no error raised. Use a dedicated consumer group per Spark job (`eventhubs.consumerGroup` in `eh_conf`). Create the consumer group in the Azure portal (**Event Hubs namespace → your Event Hub → Consumer groups**) before starting the stream.
 - **`sc._jvm` and the encryption call:** `sc` is the `SparkContext`, automatically available in Databricks notebooks. The `sc._jvm.org.apache.spark.eventhubs.EventHubsUtils.encrypt(...)` call is a Py4J bridge into the Java library; it is required because the Event Hubs connector expects the connection string in encrypted form. This call is only available in Databricks notebook and job cluster environments where the Event Hubs library is installed; it will raise a `NameError` in standalone Python scripts that do not have `sc` pre-initialised.
 - **Stream lifecycle: Job vs. notebook:** `trigger(availableNow=True)` (used in the code above) processes all available Event Hub partitions and then terminates, making it the correct choice for Databricks Jobs where each task must terminate for the job to complete. Use `trigger(processingTime="1 minute")` only when running in a long-running notebook or a Databricks Workflows **Continuous Job**; this trigger starts a stream that never terminates on its own. To stop a running stream gracefully from a notebook: `query = stream.start(); query.awaitTermination(); query.stop()`.
@@ -480,7 +485,9 @@ An Azure SQL Database must be ingested into Delta Lake on a scheduled basis. The
 
 Use `spark.read.format("jdbc")` with partition configuration. Write to Delta using MERGE for incremental loads or overwrite for full loads.
 
-> **Prerequisite: create the target table before the first load:** `DeltaTable.forName()` raises `AnalysisException` if the table does not exist. Run the `CREATE TABLE IF NOT EXISTS` DDL in the SQL section below before the first load, or add `spark.sql("CREATE TABLE IF NOT EXISTS main.bronze.orders ...")` at the top of your Python script.
+> **Network prerequisite:** The Databricks cluster must have network connectivity to the Azure SQL Database server. Configure one of: (a) a private endpoint on the Azure SQL Database with VNet injection on the Databricks cluster, (b) an Azure SQL Database firewall rule allowing the cluster's egress IP range (visible in the cluster's Spark UI → **Environment** tab under `spark.databricks.clusterUsageTags.clusterOwnerOrgId`; for IP ranges, contact your Azure administrator or use the Databricks egress IPs documented for your region). Without network access the JDBC connection fails with `com.microsoft.sqlserver.jdbc.SQLServerException: Cannot open server`.
+>
+> **Prerequisite: create the target table before the first load:** `DeltaTable.forName()` raises `AnalysisException` if the table does not exist. Run the `CREATE TABLE IF NOT EXISTS` DDL in the SQL section below before the first load, or add `spark.sql("CREATE TABLE IF NOT EXISTS main.bronze.orders_jdbc ...")` at the top of your Python script.
 
 ##### Python
 
@@ -511,7 +518,7 @@ upper_bound = str(bounds_df["hi"])
 # Retrieve the last loaded watermark from the target table.
 # On the first run, the table is empty and last_ts is None; the fallback triggers a full load.
 try:
-    last_ts = spark.table("main.bronze.orders").select(spark_max("updated_at")).collect()[0][0]
+    last_ts = spark.table("main.bronze.orders_jdbc").select(spark_max("updated_at")).collect()[0][0]
     watermark = last_ts.strftime("%Y-%m-%d %H:%M:%S") if last_ts else "1900-01-01 00:00:00"
 except Exception:
     watermark = "1900-01-01 00:00:00"
@@ -535,7 +542,7 @@ df = (
     .load()
 )
 
-target = DeltaTable.forName(spark, "main.bronze.orders")
+target = DeltaTable.forName(spark, "main.bronze.orders_jdbc")
 (
     target.alias("t")
     .merge(df.alias("s"), "t.order_id = s.order_id")
@@ -550,7 +557,7 @@ target = DeltaTable.forName(spark, "main.bronze.orders")
 ```sql
 -- Create the target table before the first JDBC load.
 -- DeltaTable.forName() in the Python MERGE will raise AnalysisException if the table does not exist.
-CREATE TABLE IF NOT EXISTS main.bronze.orders (
+CREATE TABLE IF NOT EXISTS main.bronze.orders_jdbc (
     order_id     BIGINT,
     customer_id  STRING,
     order_total  DOUBLE,
@@ -564,10 +571,10 @@ USING DELTA;
 SELECT
     COUNT(*)        AS rows_in_target,
     MAX(updated_at) AS latest_updated_at
-FROM main.bronze.orders;
+FROM main.bronze.orders_jdbc;
 
 SELECT *
-FROM main.bronze.orders
+FROM main.bronze.orders_jdbc
 WHERE updated_at >= current_date - 1
 ORDER BY updated_at DESC
 LIMIT 20;
@@ -580,8 +587,9 @@ LIMIT 20;
   - **Debezium → Kafka → Structured Streaming:** Debezium publishes change events to a Kafka topic; Databricks Structured Streaming reads from Kafka using `format("kafka")`. This path suits scenarios where Kafka is already in the architecture or where sub-minute change propagation latency is required. The Confluent Platform Kafka Connect JDBC Source connector is an alternative to Debezium for sources where log-based CDC is not available (it uses query-based polling, so load characteristics are similar to direct JDBC but the polling interval and concurrency are configurable outside Databricks).
   Both CDC patterns also resolve the hard-delete visibility limitation described below; log-based CDC captures deletes as change events, unlike watermark-based JDBC which only detects inserts and updates.
 - **Partition bounds:** `lowerBound` and `upperBound` define how Spark splits the read into `numPartitions` parallel range queries; they do not filter rows. Setting them to values far outside the actual data range produces heavily skewed partitions. The example above queries the actual `MIN`/`MAX` before each load to keep partitions balanced.
-- **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load. **First-run partial failure produces a permanent data gap:** if the full load fails partway through (timeout, network drop, source connection error), the target table contains partial data with a non-null `MAX(updated_at)`. The next run picks up from that watermark; any source rows with `updated_at` earlier than the partial load's maximum are permanently skipped. If a first full load fails, truncate the target table before restarting: `TRUNCATE TABLE main.bronze.orders`. This forces the fallback to `1900-01-01` and triggers a clean full load on the next run.
-- **Full extract (overwrite):** For tables that must be fully refreshed each run (no reliable watermark column, or the table is small enough to reload in full), replace the MERGE block with: `df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("main.bronze.orders")`. **Do not use MERGE for a full-refresh pattern**; MERGE on a full load leaves rows in the target that were deleted from the source, because MERGE only acts on matched and unmatched rows from the source; rows in the target with no matching source row are untouched by default.
+- **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load. **First-run partial failure produces a permanent data gap:** if the full load fails partway through (timeout, network drop, source connection error), the target table contains partial data with a non-null `MAX(updated_at)`. The next run picks up from that watermark; any source rows with `updated_at` earlier than the partial load's maximum are permanently skipped. If a first full load fails, truncate the target table before restarting: `TRUNCATE TABLE main.bronze.orders_jdbc`. This forces the fallback to `1900-01-01` and triggers a clean full load on the next run.
+- **`NULL updated_at` rows are silently excluded:** The subquery filter `updated_at >= '{watermark}'` does not match rows where `updated_at IS NULL`. If the source table contains historical rows with a null timestamp (common in OLTP systems where the column was added after initial data load), those rows are never ingested by the incremental pattern. Detect this before the first run: `SELECT COUNT(*) FROM dbo.orders WHERE updated_at IS NULL`. If the count is non-zero, perform the initial load as a full extract (`mode("overwrite")` — see below) to capture null-timestamp rows, then switch to the incremental watermark pattern for subsequent runs.
+- **Full extract (overwrite):** For tables that must be fully refreshed each run (no reliable watermark column, or the table is small enough to reload in full), replace the MERGE block with: `df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("main.bronze.orders_jdbc")`. **Do not use MERGE for a full-refresh pattern**; MERGE on a full load leaves rows in the target that were deleted from the source, because MERGE only acts on matched and unmatched rows from the source; rows in the target with no matching source row are untouched by default.
 - **MERGE cardinality:** Delta raises a `MERGE_CARDINALITY_VIOLATION` error if the MERGE `ON` condition matches multiple target rows to a single source row. This happens when `partitionColumn` is not a unique key of the source table. Verify that the column used in `t.order_id = s.order_id` is a unique key before using it as both the partition column and the merge key.
 - **Hard deletes are invisible:** Incremental JDBC based on `updated_at` will not detect deleted rows. Use a CDC tool (Debezium) if delete propagation is required.
 - **SQL Server driver:** Included in Databricks Runtime. For PostgreSQL, install the `org.postgresql:postgresql:<version>` Maven library via the cluster Libraries tab (see [PostgreSQL JDBC releases](https://jdbc.postgresql.org/download/) for the current version). For MySQL, install `com.mysql:mysql-connector-j:<version>`. **Installing a driver on a running cluster requires a cluster restart before the library is available.** Running without restarting fails with `ClassNotFoundException`, not a connection error.
@@ -684,6 +692,7 @@ ORDER BY 1 DESC;
 
 - **Connector catalogue:** GA for Salesforce, Workday, SQL Server, ServiceNow, and Google Analytics as of March 2026. Additional connectors are in public preview; see the [documentation](https://learn.microsoft.com/en-us/azure/databricks/ingestion/lakeflow-connect/) for the current list. **Do not use preview connectors for production workloads without evaluating the risk:** behaviour, schema contracts, and authentication may change before GA, and a discontinued connector may require rebuilding the pipeline from scratch.
 - **Unity Catalog required:** Lakeflow Connect requires Unity Catalog; it is not available with the legacy Hive metastore.
+- **Network for serverless compute:** Lakeflow Connect runs on Databricks serverless compute. For SaaS sources (Salesforce, Workday, ServiceNow, Google Analytics), serverless compute reaches public APIs directly — no additional firewall configuration is typically required. For the SQL Server connector targeting an on-premises or privately networked database, network connectivity from serverless compute to the database must be configured; see [Serverless compute networking — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/serverless-compute/vnet) for options.
 - **Schema evolution:** New columns automatically added. Deleted source columns retained in Delta with `null` values; filter downstream as needed. Column renames in the source produce a new column in Delta; the prior column persists with its historical values. Downstream pipelines must account for both the old and new column names after a rename.
 - **Asset Bundles CI/CD:** Define pipelines in `databricks.yml` and deploy via the Databricks CLI for source control and environment promotion.
 - **Cost:** Lakeflow Connect is billed at the Databricks serverless DBU rate based on compute time, not per row ingested. For low-volume, low-frequency syncs, the per-trigger compute overhead can exceed the cost of an equivalent JDBC job; evaluate against your sync frequency, data volume, and the operational overhead each approach requires.
