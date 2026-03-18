@@ -32,11 +32,11 @@ Use this section to select the right ingestion method before implementing. Each 
 
 ### Landing Zone Requirement
 
-Some methods require data to already be in cloud storage (ADLS Gen2, S3, or GCS) before Databricks can read it. Others connect directly to the source system.
+Some methods require data to already be in ADLS Gen2 before Databricks can read it. Others connect directly to the source system.
 
 | Method | Landing Zone Required | Notes |
 |--------|-----------------------|-------|
-| **Auto Loader** | Yes | Upstream system must deposit files in ADLS/S3/GCS first |
+| **Auto Loader** | Yes | Upstream system must deposit files in ADLS Gen2 first |
 | **COPY INTO** | Yes | Reads from a cloud storage path; files must be present before each run |
 | **JDBC** | No | Reads directly from the relational database over a JDBC connection |
 | **Lakeflow Connect** | No | Managed connector reads from SaaS APIs; writes directly to Delta tables |
@@ -48,7 +48,7 @@ Direct ingestion (JDBC, Lakeflow Connect, Streaming) removes the raw file audit 
 
 | Method | Best For | Avoid When |
 |--------|----------|------------|
-| **Auto Loader** | Continuous or scheduled file arrival in cloud storage (ADLS, S3, GCS); large file volumes where checkpoint-based state tracking is important; tables that require schema evolution over time | You need sub-minute event-level latency from a message bus; files are delivered once via a one-off process |
+| **Auto Loader** | Continuous or scheduled file arrival in ADLS Gen2; large file volumes where checkpoint-based state tracking is important; tables that require schema evolution over time | You need sub-minute event-level latency from a message bus; files are delivered once via a one-off process |
 | **COPY INTO** | Scheduled batch loads from a known cloud storage path; scenarios where idempotency is critical and re-runs must not create duplicates; simple batch pipelines without schema evolution needs. **Note:** Databricks documentation now labels COPY INTO as a legacy feature and recommends Streaming Tables for new SQL-based ingestion workloads. COPY INTO remains functional and supported, but evaluate Streaming Tables for new designs. Streaming Tables are Delta tables continuously updated from a streaming source, defined declaratively using Lakeflow Spark Declarative Pipelines; see [Streaming Tables — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/streaming-tables). | You need schema to auto-evolve as new columns arrive; you need automatic state management without a checkpoint directory |
 | **Structured Streaming** | Sub-minute latency ingestion from Kafka, Azure Event Hubs, or Kinesis; event-driven architectures where consumer lag must be minimised; stateful aggregations with watermarking | The source is cloud storage files rather than a message bus; your team lacks the operational capability to manage streaming job recovery |
 | **Notebook Pattern** | One-off or exploratory data loads during development or investigation; historical backfills run once by a human | Any recurring production load; any scenario where re-run safety or auditability is required |
@@ -203,7 +203,7 @@ See [Cluster configuration (Azure Databricks)](https://learn.microsoft.com/en-us
 
 > **Architecture diagram:** [Auto Loader overview (Azure Databricks)](https://learn.microsoft.com/en-us/azure/databricks/ingestion/auto-loader/) includes diagrams of the checkpoint-based file tracking mechanism and the difference between directory listing and file notification discovery modes.
 
-Auto Loader (`cloudFiles` format) incrementally ingests files from cloud storage (ADLS Gen2, S3, GCS) into Delta Lake. It records processed files in a checkpoint directory on durable storage. On each trigger, it reads files not yet recorded in the checkpoint and writes them to Delta in a transactional commit. Each file is processed once provided the checkpoint is intact and the Delta write completes. If the checkpoint is deleted, Auto Loader reprocesses all files from the source path on the next run. In append-mode pipelines (the default), this reprocessing inserts duplicate rows into the target Delta table. Auto Loader has no built-in deduplication on reprocessing; if a checkpoint is lost and the pipeline runs in append mode, deduplicate the target table manually using `MERGE` or `ROW_NUMBER()` before the pipeline resumes normal operation.
+Auto Loader (`cloudFiles` format) incrementally ingests files from ADLS Gen2 into Delta Lake. It records processed files in a checkpoint directory on durable storage. On each trigger, it reads files not yet recorded in the checkpoint and writes them to Delta in a transactional commit. Each file is processed once provided the checkpoint is intact and the Delta write completes. If the checkpoint is deleted, Auto Loader reprocesses all files from the source path on the next run. In append-mode pipelines (the default), this reprocessing inserts duplicate rows into the target Delta table. Auto Loader has no built-in deduplication on reprocessing; if a checkpoint is lost and the pipeline runs in append mode, deduplicate the target table manually using `MERGE` or `ROW_NUMBER()` before the pipeline resumes normal operation.
 
 #### Problem
 
@@ -485,7 +485,7 @@ An Azure SQL Database must be ingested into Delta Lake on a scheduled basis. The
 
 Use `spark.read.format("jdbc")` with partition configuration. Write to Delta using MERGE for incremental loads or overwrite for full loads.
 
-> **Network prerequisite:** The Databricks cluster must have network connectivity to the Azure SQL Database server. Configure one of: (a) a private endpoint on the Azure SQL Database with VNet injection on the Databricks cluster, (b) an Azure SQL Database firewall rule allowing the cluster's egress IP range (visible in the cluster's Spark UI → **Environment** tab under `spark.databricks.clusterUsageTags.clusterOwnerOrgId`; for IP ranges, contact your Azure administrator or use the Databricks egress IPs documented for your region). Without network access the JDBC connection fails with `com.microsoft.sqlserver.jdbc.SQLServerException: Cannot open server`.
+> **Network prerequisite:** The Databricks cluster must have network connectivity to the source database server. For Azure-hosted databases (Azure SQL Database, Azure Database for PostgreSQL, etc.), configure a private endpoint with VNet injection on the Databricks cluster, or add a database firewall rule allowing the cluster's egress IP range (contact your Azure administrator or check the Databricks egress IPs for your region). For on-premises databases, a VPN or ExpressRoute connection is required. Without network access the JDBC connection fails immediately — SQL Server raises `com.microsoft.sqlserver.jdbc.SQLServerException: Cannot open server`; PostgreSQL raises `org.postgresql.util.PSQLException: Connection refused`.
 >
 > **Prerequisite: create the target table before the first load:** `DeltaTable.forName()` raises `AnalysisException` if the table does not exist. Run the `CREATE TABLE IF NOT EXISTS` DDL in the SQL section below before the first load, or add `spark.sql("CREATE TABLE IF NOT EXISTS main.bronze.orders_jdbc ...")` at the top of your Python script.
 
@@ -709,12 +709,12 @@ ORDER BY 1 DESC;
 
 Some source systems (ERP platforms, proprietary databases, on-premises applications, mainframes, custom APIs) do not have a native Databricks connector and are not covered by Lakeflow Connect. A common pattern for these sources is a **landing zone approach**. If the source exposes a JDBC endpoint, direct database ingestion (see the [JDBC section](#database-ingestion--jdbc) above) may also apply; evaluate based on source connectivity, data volume, and whether a raw file audit trail is required.
 
-1. An external orchestration tool extracts data from the source and writes it as files (CSV, JSON, Parquet, or Avro) to a cloud storage landing zone (ADLS Gen2 container, S3 prefix, or GCS bucket). Azure Data Factory (ADF) is the most common tool on Azure; AWS Glue and Informatica are common alternatives.
+1. An external orchestration tool extracts data from the source and writes it as files (CSV, JSON, Parquet, or Avro) to an ADLS Gen2 landing zone container. Azure Data Factory (ADF) is the most common tool on Azure; Informatica is a common alternative.
 2. Databricks reads the files from the landing zone using **Auto Loader** (for ongoing incremental file arrival) or **COPY INTO** (for scheduled batch loads). All patterns in the [File Ingestion](#file-ingestion) section apply directly.
 
 The landing zone acts as the contractual boundary between the upstream extraction tool and the Databricks pipeline. Neither side needs to know about the other's schedule; the upstream tool writes when data is ready and Databricks reads when triggered. This also provides a raw file audit trail that enables reprocessing if a downstream pipeline fails.
 
-> **Note:** Configuring the external orchestration tool (ADF pipelines, AWS Glue jobs, etc.) is outside the scope of this cookbook. This cookbook covers what Databricks does once data is in the landing zone.
+> **Note:** Configuring the external orchestration tool (ADF pipelines, Informatica, etc.) is outside the scope of this guide. This guide covers what Databricks does once data is in the landing zone.
 
 ---
 
