@@ -1,10 +1,6 @@
 # Ingestion Guide
 ## Databricks
 
-> **Scope:** This guide covers ingestion using Databricks platform features only: Auto Loader, COPY INTO, Structured Streaming, JDBC, and Lakeflow Connect. It is self-contained — no companion document is required. For multi-hop pipeline orchestration (bronze → silver → gold) using Lakeflow Spark Declarative Pipelines, see `../processing/processing_combined.md`.
-
----
-
 ## Introduction
 
 This guide provides method selection criteria and practical, step-by-step implementation guidance for data ingestion on Databricks using only the Databricks native toolchain. It covers file ingestion, streaming ingestion, database ingestion, and managed ingestion.
@@ -29,20 +25,6 @@ If your source type matches more than one option, or if latency, schema evolutio
 ## Method Selection
 
 Use this section to select the right ingestion method before implementing. Each subsection adds a constraint that narrows the choice. Once a method is selected, jump to the corresponding implementation section.
-
-### Landing Zone Requirement
-
-Some methods require data to already be in ADLS Gen2 before Databricks can read it. Others connect directly to the source system.
-
-| Method | Landing Zone Required | Notes |
-|--------|-----------------------|-------|
-| **Auto Loader** | Yes | Upstream system must deposit files in ADLS Gen2 first |
-| **COPY INTO** | Yes | Reads from a cloud storage path; files must be present before each run |
-| **JDBC** | No | Reads directly from the relational database over a JDBC connection |
-| **Lakeflow Connect** | No | Managed connector reads from SaaS APIs; writes directly to Delta tables |
-| **Structured Streaming** | No | Reads from a message broker offset (Kafka, Event Hubs) |
-
-Direct ingestion (JDBC, Lakeflow Connect, Streaming) removes the raw file audit trail that a landing zone provides. If reprocessing from source is important, prefer a landing zone approach where feasible.
 
 ### Decision Criteria
 
@@ -81,7 +63,7 @@ If you are choosing between a scheduled batch load and a streaming approach, com
 | **Deduplication** | Simpler — batch boundaries are explicit | Requires watermarking or deduplication logic | Requires watermarking and careful stateful design |
 | **Downstream freshness** | Stale between runs | Near-real-time | Real-time or near-real-time |
 
-`trigger(availableNow=True)` terminates the cluster after each run, avoiding the continuous cost of a running stream. For sub-minute latency or very high-throughput sources, use continuous streaming. `trigger(once=True)` is deprecated as of DBR 11.3 LTS — use `trigger(availableNow=True)` for all new pipelines.
+`trigger(availableNow=True)` terminates the cluster after each run, avoiding the continuous cost of a running stream. For sub-minute latency or very high-throughput sources, use continuous streaming. (`trigger(once=True)` is deprecated — see the DBR version table above.)
 
 ---
 
@@ -582,10 +564,7 @@ LIMIT 20;
 
 #### Discussion and Concerns
 
-- **Parallel reads increase source load:** 8 partitions = 8 concurrent connections to the source database. Use a read replica where available: a continuously synchronized read-only copy of the database that absorbs the Spark load without impacting the primary instance. If no read replica is available and the parallel read load is unacceptable on the primary (due to contention with application queries, connection limits, or DBA policy), consider a **CDC-based approach** that streams changes at low impact rather than bulk-querying the source on a schedule:
-  - **Debezium → ADLS Gen2 → Auto Loader:** Debezium reads the database transaction log (SQL Server CDC, PostgreSQL logical replication, MySQL binlog) and writes change events as JSON or Avro files directly to an ADLS Gen2 landing zone. Auto Loader then ingests those files incrementally. The source database sees only a low-rate log read; no parallel bulk queries.
-  - **Debezium → Kafka → Structured Streaming:** Debezium publishes change events to a Kafka topic; Databricks Structured Streaming reads from Kafka using `format("kafka")`. This path suits scenarios where Kafka is already in the architecture or where sub-minute change propagation latency is required. The Confluent Platform Kafka Connect JDBC Source connector is an alternative to Debezium for sources where log-based CDC is not available (it uses query-based polling, so load characteristics are similar to direct JDBC but the polling interval and concurrency are configurable outside Databricks).
-  Both CDC patterns also resolve the hard-delete visibility limitation described below; log-based CDC captures deletes as change events, unlike watermark-based JDBC which only detects inserts and updates.
+- **Parallel reads increase source load:** 8 partitions = 8 concurrent connections to the source database. Use a read replica where available: a continuously synchronized read-only copy of the database that absorbs the Spark load without impacting the primary instance. If no read replica is available and the parallel read load is unacceptable on the primary (due to contention with application queries, connection limits, or DBA policy), consider a **CDC-based approach** using Debezium: route change events to an ADLS Gen2 landing zone (then Auto Loader) or to Kafka (then Structured Streaming). Both patterns impose only a low-rate log read on the source and capture hard deletes as change events, unlike watermark-based JDBC which only detects inserts and updates.
 - **Partition bounds:** `lowerBound` and `upperBound` define how Spark splits the read into `numPartitions` parallel range queries; they do not filter rows. Setting them to values far outside the actual data range produces heavily skewed partitions. The example above queries the actual `MIN`/`MAX` before each load to keep partitions balanced.
 - **Watermark management:** The watermark is derived from `MAX(updated_at)` of the target table at the start of each run, so no manual date update is needed between runs. On the first run the table is empty and the fallback value `1900-01-01` causes a full load. **First-run partial failure produces a permanent data gap:** if the full load fails partway through (timeout, network drop, source connection error), the target table contains partial data with a non-null `MAX(updated_at)`. The next run picks up from that watermark; any source rows with `updated_at` earlier than the partial load's maximum are permanently skipped. If a first full load fails, truncate the target table before restarting: `TRUNCATE TABLE main.bronze.orders_jdbc`. This forces the fallback to `1900-01-01` and triggers a clean full load on the next run.
 - **`NULL updated_at` rows are silently excluded:** The subquery filter `updated_at >= '{watermark}'` does not match rows where `updated_at IS NULL`. If the source table contains historical rows with a null timestamp (common in OLTP systems where the column was added after initial data load), those rows are never ingested by the incremental pattern. Detect this before the first run: `SELECT COUNT(*) FROM dbo.orders WHERE updated_at IS NULL`. If the count is non-zero, perform the initial load as a full extract (`mode("overwrite")` — see below) to capture null-timestamp rows, then switch to the incremental watermark pattern for subsequent runs.
