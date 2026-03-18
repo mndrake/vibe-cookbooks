@@ -1,7 +1,7 @@
 # Ingestion Guide
 ## Databricks
 
-> **Scope:** This guide covers ingestion using Databricks platform features only: Auto Loader, COPY INTO, Structured Streaming, JDBC, and Lakeflow Connect. It is self-contained — no companion document is required. For multi-hop pipeline orchestration (bronze → silver → gold) using Lakeflow Spark Declarative Pipelines, see `../processing/processing_patterns.md`.
+> **Scope:** This guide covers ingestion using Databricks platform features only: Auto Loader, COPY INTO, Structured Streaming, JDBC, and Lakeflow Connect. It is self-contained — no companion document is required. For multi-hop pipeline orchestration (bronze → silver → gold) using Lakeflow Spark Declarative Pipelines, see `../processing/processing_combined.md`.
 
 ---
 

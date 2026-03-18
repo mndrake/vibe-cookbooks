@@ -265,7 +265,7 @@ spark.sql("SHOW GRANTS ON TABLE main.marts.dim_customer").show(truncate=False)
 
 - [Unity Catalog privileges — Databricks](https://docs.databricks.com/en/data-governance/unity-catalog/manage-privileges/privileges.html)
 - [Sync identities from AAD — Databricks](https://docs.databricks.com/en/administration-guide/users-groups/scim/index.html)
-- `security_patterns.md` — role definitions and privilege scope decisions
+- `security_combined.md` — role definitions and privilege scope decisions
 
 ---
 
@@ -491,7 +491,7 @@ SELECT DISTINCT region FROM main.marts.v_customer_regional;
 - [Dynamic views for row-level security — Databricks](https://docs.databricks.com/en/views/dynamic.html)
 - [current_user() function — Databricks](https://docs.databricks.com/en/sql/language-manual/functions/current_user.html)
 - [IS_MEMBER() function — Databricks](https://docs.databricks.com/en/sql/language-manual/functions/is_member.html)
-- `security_patterns.md` — when to use dynamic views versus native Unity Catalog masking
+- `security_combined.md` — when to use dynamic views versus native Unity Catalog masking
 
 ---
 
@@ -599,7 +599,7 @@ LIMIT 10;
 
 - [Dynamic views — Databricks](https://docs.databricks.com/en/views/dynamic.html)
 - [REGEXP_REPLACE — Databricks SQL](https://docs.databricks.com/en/sql/language-manual/functions/regexp_replace.html)
-- `security_patterns.md` — satellite-level security boundary design
+- `security_combined.md` — satellite-level security boundary design
 
 ---
 
@@ -728,7 +728,7 @@ ALTER TABLE main.raw_vault.sat_customer_details
 
 - [Unity Catalog column masks — Databricks](https://docs.databricks.com/en/data-governance/unity-catalog/row-and-column-filters.html)
 - [ALTER TABLE SET MASK — Databricks SQL](https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-alter-table.html)
-- `security_patterns.md` — native masks versus dynamic views trade-offs
+- `security_combined.md` — native masks versus dynamic views trade-offs
 
 ---
 
@@ -904,7 +904,7 @@ UNSET TAGS ('pii_type');
 - [Unity Catalog tags — Databricks](https://docs.databricks.com/en/data-governance/unity-catalog/tags.html)
 - [ALTER TABLE SET TAGS — Databricks SQL](https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-ddl-alter-table.html)
 - [system.information_schema.column_tags — Databricks](https://docs.databricks.com/en/sql/language-manual/information-schema/column_tags.html)
-- `security_patterns.md` — governance enforcement layer decisions
+- `security_combined.md` — governance enforcement layer decisions
 
 ---
 
@@ -1152,7 +1152,7 @@ FROM system.information_schema.information_schema_catalog_name;
 ### Metrics for Success
 
 - [ ] All PII columns tagged `masking_required=true` in `system.information_schema.column_tags` have a corresponding Unity Catalog column mask applied (`main.information_schema.column_masks` count matches the tagged PII column count)
-- [ ] Pipeline service principal has no Metastore Admin, Catalog Owner, or `ALL PRIVILEGES` grants; `SHOW GRANTS` returns only the minimum privilege set documented in `security_patterns.md`
+- [ ] Pipeline service principal has no Metastore Admin, Catalog Owner, or `ALL PRIVILEGES` grants; `SHOW GRANTS` returns only the minimum privilege set documented in `security_combined.md`
 - [ ] Audit log retention meets the compliance requirement (e.g., 90 days in `system.access.audit`; export to long-term storage verified for periods beyond the system table retention window)
 - [ ] All production secrets are stored in Databricks Secret Scopes — zero occurrences of hardcoded credentials in notebooks, job configurations, or version control (verify with a codebase scan for connection string patterns)
 - [ ] `SHOW GRANTS ON TABLE main.marts.dim_customer` (and all other consumer-facing mart tables) returns only the expected analyst and BI service account groups — no engineers, no service principals beyond the pipeline SP

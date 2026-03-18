@@ -175,7 +175,7 @@ DESCRIBE DETAIL catalog_name.schema_name.my_table;
 - [OPTIMIZE — Databricks SQL Language Manual](https://docs.databricks.com/en/sql/language-manual/delta-optimize.html)
 - [Delta Lake File Management — Databricks Documentation](https://docs.databricks.com/en/delta/optimize.html)
 - [Delta Lake optimizations — Delta Lake](https://docs.delta.io/latest/optimizations-oss.html)
-- [Performance Tuning Architectural Patterns](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns](./performance_combined.md)
 
 ---
 
@@ -243,7 +243,7 @@ WHERE customer_id = 'C123'
 
 - [OPTIMIZE ZORDER BY — Databricks SQL Language Manual](https://docs.databricks.com/en/sql/language-manual/delta-optimize.html)
 - [Delta Lake Data Skipping — Databricks Documentation](https://docs.databricks.com/en/delta/data-skipping.html)
-- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_combined.md)
 
 ---
 
@@ -318,7 +318,7 @@ CLUSTER BY (event_type, event_date);
 
 - [Liquid Clustering — Databricks Documentation](https://docs.databricks.com/en/delta/clustering.html)
 - [Migrate from Partitioning to Liquid Clustering — Databricks Documentation](https://docs.databricks.com/en/delta/clustering.html#migrate-to-liquid-clustering)
-- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_combined.md)
 
 ---
 
@@ -458,7 +458,7 @@ WHERE event_date = '2026-03-01';
 
 - [Delta Lake Partitioning — Databricks Documentation](https://docs.databricks.com/en/delta/partitions.html)
 - [Data Skipping for Delta Lake — Databricks Documentation](https://docs.databricks.com/en/delta/data-skipping.html)
-- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_combined.md)
 
 ---
 
@@ -537,7 +537,7 @@ GROUP BY o.customer_id;
 
 - [Adaptive Query Execution — Databricks Documentation](https://docs.databricks.com/en/optimizations/aqe.html)
 - [AQE Configuration Reference — Apache Spark Documentation](https://spark.apache.org/docs/latest/sql-performance-tuning.html#adaptive-query-execution)
-- [Performance Tuning Architectural Patterns — AQE and Photon Scope](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns — AQE and Photon Scope](./performance_combined.md)
 
 ---
 
@@ -632,7 +632,7 @@ FILEFORMAT = PARQUET;
 
 - [Photon Engine — Databricks Documentation](https://docs.databricks.com/en/compute/photon.html)
 - [Supported Photon Operations — Databricks Documentation](https://docs.databricks.com/en/compute/photon.html#supported-operators)
-- [Performance Tuning Architectural Patterns — AQE and Photon Scope](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns — AQE and Photon Scope](./performance_combined.md)
 
 ---
 
@@ -781,7 +781,7 @@ WHERE name = 'my_production_warehouse';
 
 - [Compute Configuration — Databricks Documentation](https://docs.databricks.com/en/compute/configure.html)
 - [SQL Warehouse Sizing — Databricks Documentation](https://docs.databricks.com/en/compute/sql-warehouse/create.html)
-- [Performance Tuning Architectural Patterns — Cluster vs. SQL Warehouse Selection](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns — Cluster vs. SQL Warehouse Selection](./performance_combined.md)
 
 ---
 
@@ -860,7 +860,7 @@ WHERE customer_id = 'C123'
 
 - [ANALYZE TABLE — Databricks SQL Language Manual](https://docs.databricks.com/en/sql/language-manual/sql-ref-syntax-aux-analyze-table.html)
 - [Delta Lake Data Skipping — Databricks Documentation](https://docs.databricks.com/en/delta/data-skipping.html)
-- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_patterns.md)
+- [Performance Tuning Architectural Patterns — Delta Lake Storage Optimization](./performance_combined.md)
 
 ---
 
