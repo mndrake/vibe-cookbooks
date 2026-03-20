@@ -34,9 +34,11 @@ You are creating a new Databricks cookbook for the vibe-cookbooks project.
 5. After creating the file, summarise what was scaffolded and remind the user to:
    - Fill in the Problem statements with real scenarios
    - Replace stub code blocks with working Python and SQL examples
-   - Complete the Design Decisions table before running `/critique-cookbook`
-   - Run `/review-cookbook` when content is complete to check CLAUDE.md compliance
-   - Run `/critique-cookbook` to check for completeness, tone, and conciseness issues
-   - Run `/verify-cookbook` to validate technical claims against vendor documentation
+   - Complete the Design Decisions table
+   - Run `/polish-cookbook` once content is complete — it runs structural compliance,
+     critique, and technical verification in a single iterative loop and commits when
+     all three gates pass
+   - Alternatively, run the gates individually: `/review-cookbook` (structure),
+     `/critique-cookbook` (completeness, tone), `/verify-cookbook` (accuracy)
 
 6. Commit with message: `scaffold: add {topic} cookbook`
