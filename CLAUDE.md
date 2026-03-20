@@ -9,8 +9,8 @@ This project provides practical, step-by-step data architecture cookbooks for Da
 - **Resource Selection:** Only use free and open resources. Prefer official Databricks documentation, Databricks Tech Talks, and reputable community notebooks.
 - **Language Preference:** Prioritize Python and SQL for all code samples and explanations.
 - **Cookbook Structure:**
-  - Top-level sections MUST be ingestion types only (e.g., File Ingestion, Streaming Ingestion, Ad Hoc Ingestion). **Do NOT use method names (e.g., Auto Loader, COPY INTO) as top-level sections.**
-  - Each ingestion type section contains one or more method subsections (e.g., Auto Loader, COPY INTO, Notebook Pattern)
+  - Top-level sections MUST be domain types (e.g., File Ingestion, Streaming Ingestion, Database Ingestion). **Do NOT use method names (e.g., Auto Loader, COPY INTO) as top-level sections.**
+  - Each domain type section contains one or more method subsections (e.g., Auto Loader, COPY INTO, JDBC)
   - Each method subsection includes:
     - Title and objective
     - Prerequisites (if needed)
@@ -18,7 +18,7 @@ This project provides practical, step-by-step data architecture cookbooks for Da
     - References to official docs or sample notebooks
 - **File Organization:**
   - Organize cookbooks by topic under the `data_architecture/` folder (e.g., `data_architecture/ingestion/`)
-  - Use descriptive filenames that reference the topic (e.g., `ingestion_cookbook.md`)
+  - Use descriptive filenames that reference the topic (e.g., `ingestion_combined.md`)
 - **Template Usage:**
   - Follow the provided cookbook template for new entries
   - Ensure each new cookbook is actionable and self-contained
@@ -26,7 +26,7 @@ This project provides practical, step-by-step data architecture cookbooks for Da
 
 ## Example Topics (expand as needed)
 
-- Ingestion (Auto Loader, COPY INTO, Structured Streaming, Notebook Patterns)
+- Ingestion (Auto Loader, COPY INTO, Structured Streaming, JDBC, Lakeflow Connect)
 - Processing, Summarizing, and Transformation
 - Performance Tuning
 - Security (RBAC, RLS, masking, etc.)
@@ -49,41 +49,40 @@ When given a critical or accuracy review task (e.g., fact-checking, validating t
 
 ## Combined Guide Documents
 
-When a topic has both a `*_patterns.md` and a `*_cookbook.md` file, a `*_combined.md` can be created to serve as a self-contained guide that does not require the reader to open two documents.
+All guides in this project are `*_combined.md` files — self-contained documents that include both method selection guidance (decision tables) and implementation steps. There are no separate `*_patterns.md` or `*_cookbook.md` files.
 
-### When to Create a Combined Guide
+New guides are created directly as `{topic}_combined.md` using `data_architecture/cookbook_template.md` as the base. See the `/new-cookbook` skill for a guided scaffolding workflow.
 
-Create a combined guide when:
-- The patterns document contains **decision tables** whose absence from the cookbook would lead a reader to select the wrong method, wrong configuration, or wrong architecture — resulting in errors, data loss, or avoidable rework.
-- The patterns document does **not** merely repeat what the cookbook already says in its Discussion sections.
+### Structure
 
-### Process
+Every combined guide follows this section order:
 
-1. **Copy the cookbook** as the base file (`cp topic_cookbook.md topic_combined.md`). This avoids timeout risk from writing a large file from scratch.
-2. **Edit the title and intro**: update the title from "Cookbook" to "Guide", remove any "companion document" callout that refers the reader to the patterns doc, update the scope note to state the guide is self-contained.
-3. **Insert a "Design Decisions" section** after the intro (before the Dev Pre-Requisites section) containing the content selected from the patterns document.
-4. **Do not touch the implementation sections** — they are carried over verbatim from the cookbook.
+1. **Introduction** — scope, audience, quick navigation table
+2. **Design Decisions** — method selection tables (Best For / Avoid When, schema evolution behaviour, batch vs. streaming, etc.) placed before implementation sections
+3. **Development Environment Pre-Requisites**
+4. **Infrastructure Pre-Requisites**
+5. **Domain type sections** (e.g., File Ingestion, Streaming Ingestion) — each containing method subsections
+6. **Managing Your Environment** — monitoring, troubleshooting, common errors
 
-### What to Include from the Patterns Document
+### What to Include in the Design Decisions Section
 
-Include only content that **prevents the reader from selecting the wrong method or misconfiguring a key option**. In practice this means:
+Include only content that **prevents the reader from selecting the wrong method or misconfiguring a key option**:
 
 - **Decision tables** (Best For / Avoid When, scenario → recommended approach)
 - **Per-method behaviour tables** (e.g., schema evolution behaviour, layer responsibilities, eligibility tables)
 - **Minimum required context** to make the tables self-explanatory (one sentence per table at most)
 
-Prefer a table over prose. If the patterns document describes a decision in prose only, convert it to a compact table or a short bullet list before including it.
+Prefer a table over prose. If a decision can be described in prose only, convert it to a compact table or a short bullet list.
 
-### What NOT to Include
+### What NOT to Include in Design Decisions
 
-- Trade-off and rationale prose paragraphs (the reader can consult the patterns doc for depth)
+- Trade-off and rationale prose paragraphs
 - Architecture diagram callouts
-- "Overview" paragraphs describing what the patterns section covers
-- "See Also" link lists from patterns sections (the cookbook already has these per method)
-- Content already covered in the cookbook's Discussion sections
+- "Overview" paragraphs
+- Content already covered in the method's Discussion sections
 
 ### Filename and Location
 
-Use the naming convention `{topic}_combined.md` in the same directory as the source files (e.g., `data_architecture/ingestion/ingestion_combined.md`).
+Use the naming convention `{topic}_combined.md` in `data_architecture/{domain}/` (e.g., `data_architecture/ingestion/ingestion_combined.md`).
 
 
