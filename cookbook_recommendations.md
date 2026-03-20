@@ -1,178 +1,178 @@
 # Cookbook Recommendations
 
 This document organises recommended content across all major data architecture domains.
-Content is split into two types:
-
-- **Architectural Pattern** — A decision or design guide explaining *what*, *when*, and *why*.
-  These are reference docs: trade-off analysis, layer structure, and when to choose one approach over another.
-  They do not contain step-by-step implementation code.
-- **Cookbook** — A step-by-step implementation guide explaining *how*.
-  These are actionable docs: prerequisites, Python and SQL examples, validation steps, and references.
+Each domain has a single self-contained cookbook (`*_cookbook.md`) that covers both
+method selection (decision tables) and step-by-step implementation.
 
 ---
 
-## Suggested File Structure
+## File Structure
 
 ```
 data_architecture/
+├── cookbook_template.md
+├── cookbook_recommendations.md
 ├── ingestion/
-│   ├── ingestion_patterns.md               ← architectural pattern
-│   └── ingestion_cookbook.md               ← cookbook
+│   └── ingestion_cookbook.md
 ├── processing/
-│   ├── processing_patterns.md              ← architectural pattern
-│   └── processing_cookbook.md              ← cookbook
+│   └── processing_cookbook.md
 ├── performance/
-│   ├── performance_patterns.md             ← architectural pattern
-│   └── performance_cookbook.md             ← cookbook
+│   └── performance_cookbook.md
 └── security/
-    ├── security_patterns.md                ← architectural pattern
-    └── security_cookbook.md                ← cookbook
+    └── security_cookbook.md
 ```
 
 ---
 
-## 1. Ingestion
+## 1. Ingestion — `ingestion/ingestion_cookbook.md`
 
-### Architectural Pattern — `ingestion/ingestion_patterns.md`
+### Method Selection
 
 | Topic | Description |
 |-------|-------------|
-| Ingestion method selection | Decision guide: Auto Loader vs. COPY INTO vs. Structured Streaming vs. Lakeflow Spark Declarative Pipelines vs. Notebook pattern. When to use each based on latency, volume, and re-run safety requirements. |
-| Batch vs. streaming trade-offs | Latency, cost, complexity, and failure recovery implications of each approach. |
-| Schema evolution strategy | How each ingestion method handles schema changes and what the downstream Delta impact is. |
-| Database Ingestion (JDBC) | Understand watermark strategies, parallelism, and push-down optimisation for JDBC sources. |
-| Managed Ingestion | Understand the trade-offs between Lakeflow Connect and third-party connectors. |
+| Decision Criteria | Best For / Avoid When comparison across Auto Loader, COPY INTO, Structured Streaming, JDBC, and Lakeflow Connect. |
+| Schema Evolution Behaviour | How each method handles new or changed columns and what happens without explicit configuration. |
+| Batch vs. Streaming | Latency, cost, failure recovery, and operational complexity comparison. |
 
-### Cookbook — `ingestion/ingestion_cookbook.md`
+### File Ingestion
 
-#### File Ingestion
 | Method | Description |
 |--------|-------------|
-| Auto Loader | Incrementally ingest files from cloud storage (ADLS, S3, GCS) using `cloudFiles` format. Includes checkpoint configuration, schema inference, and schema evolution handling. |
-| COPY INTO | Idempotent, SQL-based batch ingestion from cloud storage into Delta tables. Covers idempotency guarantees and re-run behavior. |
+| Auto Loader | Incrementally ingest files from ADLS Gen2 using `cloudFiles` format with checkpoint-based state tracking and configurable schema evolution. |
+| COPY INTO | Idempotent, SQL-based batch ingestion from a cloud storage path into a Delta table. |
 
-#### Streaming Ingestion
+### Streaming Ingestion
+
 | Method | Description |
 |--------|-------------|
-| Structured Streaming | Micro-batch or continuous stream processing from Kafka, Event Hubs, or Kinesis into Delta Lake. |
+| Structured Streaming | Micro-batch or continuous ingestion from Azure Event Hubs or Kafka. Covers consumer groups, checkpointing, and Event Hubs Capture for backfill. When sub-minute latency is not required, a Kafka Connector landing files in ADLS Gen2 with Auto Loader or COPY INTO is an alternative. |
 
-#### Database Ingestion
+### Database Ingestion
+
 | Method | Description |
 |--------|-------------|
-| JDBC | Extract from a relational database (SQL Server, PostgreSQL, MySQL, Oracle). |
+| JDBC | Watermark-based incremental extract from relational databases (SQL Server, PostgreSQL, MySQL, Oracle) with partition parallelism. |
 
-#### Managed Ingestion
+### Managed Ingestion
+
 | Method | Description |
 |--------|-------------|
-| Lakeflow Connect | Ingest from SaaS applications (Salesforce, Workday, SQL Server) natively on Databricks. |
-
-#### Ad Hoc / Interactive Ingestion
-| Method | Description |
-|--------|-------------|
-| Notebook Pattern | Manual or exploratory ingestion using `spark.read` / `spark.write`. Useful for one-time loads or prototyping. |
-
-**Key differentiators to call out:**
-- Auto Loader vs. COPY INTO: state tracking, schema evolution, and re-run behavior differences.
+| Lakeflow Connect | Native Databricks connector for SaaS sources (Salesforce, Workday, ServiceNow, SQL Server, Google Analytics). GA as of March 2026. |
 
 ---
 
-## 2. Processing, Summarizing, and Transformation
+## 2. Processing, Summarizing, and Transformation — `processing/processing_cookbook.md`
 
-### Architectural Pattern — `processing/processing_patterns.md`
+### Design Decisions
 
 | Topic | Description |
 |-------|-------------|
-| Medallion architecture | Bronze → Silver → Gold layer responsibilities, data contracts between layers, and when to add or collapse layers. |
-| Native Pipeline Layer Mapping | How PySpark notebooks, SDP pipelines, and Databricks Jobs map to Medallion layers. |
-| PySpark vs. Spark SQL vs. SDP | Decision guide for choosing the transformation interface based on team skills, testability, and pipeline complexity. |
+| Medallion Layer Responsibilities | Bronze → Silver → Gold layer ownership, data contracts, and what each layer should and should not do. |
+| Orchestration: Databricks Jobs vs. SDP | When to use a Databricks Job pipeline vs. Lakeflow Spark Declarative Pipelines based on complexity, quality enforcement, and operational needs. |
+| Transformation Tool: PySpark vs. Spark SQL vs. SDP | Decision guide for choosing the transformation interface by team skills, testability, and pipeline complexity. |
 
-### Cookbook — `processing/processing_cookbook.md`
+### Transformations
 
-#### Lakeflow Spark Declarative Pipelines (SDP)
 | Topic | Description |
 |-------|-------------|
-| Multi-Hop Pipeline | Declarative Bronze → Silver pipeline with `@dlt.table`, `@dlt.expect` quality rules, and managed cluster lifecycle. Covers Python decorator and SQL `CONSTRAINT ... EXPECT` syntax, pipeline modes (triggered vs. continuous), and managed table lifecycle. |
-
-#### Native Databricks / PySpark Patterns
-| Topic | Description |
-|-------|-------------|
-| Delta Lake Transformations | `MERGE INTO`, `UPDATE`, `DELETE` in both PySpark and SQL. Functional differences, not just syntax. |
+| Delta Lake Transformations — MERGE INTO | Upsert records into a Delta table based on a business key. |
+| Delta Lake Transformations — UPDATE and DELETE | Correct or remove records already written to a Delta table. |
 | Aggregations and Summarization | `GROUP BY`, window functions (`OVER`, `PARTITION BY`), rollups, and cube. |
 | Data Cleansing and Deduplication | Null handling, type casting, `dropDuplicates` (Python) vs. `ROW_NUMBER()` (SQL). |
-| SCD Type 1 and Type 2 | Overwrite and history-tracking patterns using Delta `MERGE INTO` and SDP `APPLY CHANGES INTO`. |
 | Joins and Enrichment | Broadcast joins, shuffle joins, and skew handling. |
-| Incremental Load Patterns | Process only records changed since the last run (append, MERGE, or partition overwrite). |
 
-**Key differentiators to call out:**
+### SCD and Incremental Patterns
+
+| Topic | Description |
+|-------|-------------|
+| SCD Type 1 | Overwrite a slowly changing attribute with no history retained. |
+| SCD Type 2 (Native Delta MERGE) | Track full history of attribute changes using a two-pass MERGE pattern. |
+| SCD Type 2 via SDP APPLY CHANGES INTO | Track history declaratively in an SDP pipeline. |
+| Incremental Load Patterns — Databricks Jobs | Process only records changed since the last run (append, MERGE, or partition overwrite). |
+
+### Reuse and Orchestration
+
+| Topic | Description |
+|-------|-------------|
+| Reusable Transformation Logic | Native Python functions and Spark SQL UDFs shared across notebooks and jobs. |
+| Date Spine Generation | Generate a complete date sequence in native Spark for time-series joins and gap-filling. |
+| Lakeflow Spark Declarative Pipelines — Multi-Hop Pipeline | Declarative Bronze → Silver pipeline with `@dlt.table`, `@dlt.expect` quality rules, and managed cluster lifecycle. |
+| Pipeline Orchestration — Databricks Jobs and Asset Bundles | Define and deploy multi-task Databricks Jobs using Asset Bundles (YAML). |
+
+**Key differentiators:**
 - `MERGE` vs. full overwrite vs. append: when each is appropriate and cost implications.
-- Delta MERGE INTO vs. SDP `APPLY CHANGES INTO` for SCD Type 2: declarative vs. manual approach.
+- Delta MERGE INTO vs. SDP `APPLY CHANGES INTO` for SCD Type 2: manual vs. declarative approach.
 
 ---
 
-## 3. Performance Tuning
+## 3. Performance Tuning — `performance/performance_cookbook.md`
 
-### Architectural Pattern — `performance/performance_patterns.md`
+### Design Decisions
 
 | Topic | Description |
 |-------|-------------|
-| Delta Lake storage optimization strategy | When to use `OPTIMIZE` + `ZORDER` vs. partitioning vs. liquid clustering. These are complementary but serve different access patterns and should not be applied blindly. |
-| Cluster vs. SQL Warehouse selection | When to use a Spark cluster (ETL, PySpark, streaming) vs. Databricks SQL Warehouse (ad hoc queries, BI). Cost and performance implications. |
-| AQE and Photon scope | What AQE covers automatically vs. what requires configuration; which operation types Photon accelerates vs. does not. |
+| Delta Lake Storage Optimization | When to use OPTIMIZE + ZORDER vs. Liquid Clustering vs. static partitioning — these are complementary but serve different access patterns. |
+| Compute Selection: Spark Cluster vs. SQL Warehouse | When to use a Job cluster vs. an all-purpose cluster vs. a SQL Warehouse for ETL, streaming, and ad hoc workloads. |
+| AQE Configuration Reference | What AQE handles automatically vs. what still requires manual configuration. |
+| Photon Eligibility | Which operation types Photon accelerates and which it does not. |
 
-### Cookbook — `performance/performance_cookbook.md`
+### Delta Lake Optimization
 
-#### Delta Lake Optimization
 | Topic | Description |
 |-------|-------------|
-| OPTIMIZE and compaction | File compaction for small-file problems; when to run and how to schedule. |
-| ZORDER clustering | Multi-dimensional clustering for range and equality filters; column selection guidance. |
-| VACUUM | Cleaning up old Delta files; retention period trade-offs with time travel. |
+| OPTIMIZE and Compaction | File compaction for small-file accumulation; when to run and how to schedule. |
+| ZORDER Clustering | Multi-dimensional clustering for range and equality filters; column selection guidance. |
 | Liquid Clustering | Auto-adaptive clustering as an alternative to static partitioning and ZORDER. |
-| Partitioning strategy | When and how to partition; avoiding over-partitioning. |
+| VACUUM | Reclaim storage from old Delta snapshots; retention period trade-offs with time travel. |
+| Partitioning Strategy | When and how to partition; avoiding over-partitioning on high-cardinality columns. |
 
-#### Query and Pipeline Optimization
+### Query and Pipeline Optimization
+
 | Topic | Description |
 |-------|-------------|
-| Adaptive Query Execution (AQE) | Configuration for partition coalescing, skew join optimization, and broadcast join conversion. |
+| Adaptive Query Execution (AQE) | Partition coalescing, skew join optimisation, and broadcast join conversion. |
 | Photon Engine | Confirming Photon is active; eligible vs. non-eligible operations. |
 | Caching | `spark.catalog.cacheTable`, `.cache()`, `.persist()` — when helpful vs. harmful. |
-| Cluster sizing and autoscaling | Right-sizing for ETL vs. ad hoc; autoscaling configuration trade-offs. |
-| Statistics and predicate pushdown | `ANALYZE TABLE`, column pruning, and avoiding full scans. |
+| Cluster Sizing and Autoscaling | Right-sizing for ETL vs. ad hoc; autoscaling configuration trade-offs. |
+| Statistics and Predicate Pushdown | `ANALYZE TABLE`, column pruning, and avoiding full scans. |
+| Native Incremental Loading with DeltaTable MERGE | Incremental MERGE pattern optimised for Delta performance. |
+| Lakeflow SDP Pipeline Performance | Tuning SDP pipeline cluster size, pipeline mode, and checkpoint configuration. |
 
 ---
 
-## 4. Security (RBAC, RLS, Masking)
+## 4. Security (RBAC, RLS, Masking) — `security/security_cookbook.md`
 
-### Architectural Pattern — `security/security_patterns.md`
+### Design Decisions
 
 | Topic | Description |
 |-------|-------------|
-| Unity Catalog governance model | Catalog → Schema → Table hierarchy; admin roles vs. data steward roles vs. data consumer roles. When to use Unity Catalog native features vs. dynamic views. |
+| Unity Catalog Native Features vs. Dynamic Views | When to use UC-native row filters and column masks vs. dynamic views; feature requirements and trade-offs. |
+| Role Reference | Admin, data steward, and data consumer privilege sets scoped to the Unity Catalog hierarchy. |
 | Pipeline Service Principal Privilege Model | Minimum privilege set per pipeline layer scoped to Medallion layer boundaries. |
-| Governance for multi-layer architectures | Applying RBAC, RLS, and masking consistently across Medallion layers, and where enforcement should live (Bronze vs. Gold boundary). |
+| Security Enforcement by Medallion Layer | Where to enforce RBAC, RLS, and masking in a Bronze → Silver → Gold pipeline. |
 
-### Cookbook — `security/security_cookbook.md`
+### Access Control
 
-#### Unity Catalog Access Control
 | Topic | Description |
 |-------|-------------|
-| RBAC with Unity Catalog | `GRANT` / `REVOKE` on catalogs, schemas, tables, and views. Admin vs. data steward privilege sets. |
-| Secrets Management | Databricks Secrets via CLI and Python to avoid hardcoded credentials in notebooks and jobs. |
+| RBAC with Unity Catalog | `GRANT` / `REVOKE` on catalogs, schemas, tables, and views for users and service principals. |
+| Secrets Management | Store and retrieve credentials using Databricks Secrets (`dbutils.secrets`) to avoid hardcoded credentials in notebooks and jobs. |
 
-#### Row-Level and Column-Level Security
+### Row-Level and Column-Level Security
+
 | Topic | Description |
 |-------|-------------|
-| Row-Level Security (RLS) | Dynamic views filtering rows based on `current_user()` or group membership. |
-| Column Masking | Masking PII using dynamic views or Unity Catalog native column masks. |
-| Dynamic Views | Combining RLS and column masking in a single view. |
+| Row-Level Security (RLS) with Dynamic Views | Filter rows based on `current_user()` or group membership via a view layer. |
+| Column Masking with Dynamic Views | Mask PII or sensitive column values for non-privileged users via a view layer. |
+| Unity Catalog Native Column Masks | Apply column-level masking directly on the base table without a separate view (UC Premium required). |
 
-#### Audit, Encryption, and Metadata
+### Audit and Governance
+
 | Topic | Description |
 |-------|-------------|
-| Audit Logging | Querying Databricks audit logs via `system.access.audit`. |
-| Data Encryption | At-rest encryption defaults and customer-managed keys (CMK) for ADLS/S3. |
 | Unity Catalog Tag Management | Tag tables and columns with classification labels for governance and data discovery. |
+| Audit Logging | Query Databricks audit logs via `system.access.audit`. |
+| Data Encryption | At-rest encryption defaults and customer-managed keys (CMK) for ADLS Gen2. |
 
-**Key differentiators to call out:**
-- Unity Catalog RBAC vs. legacy table ACLs: Unity Catalog is the recommended path forward.
-- Unity Catalog native RLS/masking vs. dynamic views: native features are simpler but require Unity Catalog Premium.
+**Key differentiators:**
+- UC-native RLS/masking vs. dynamic views: native features are simpler to manage but require Unity Catalog Premium.
