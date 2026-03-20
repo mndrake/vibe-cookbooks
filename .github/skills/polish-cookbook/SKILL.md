@@ -1,17 +1,12 @@
 ---
-mode: agent
-tools:
-  - codebase
-  - editFiles
-  - fetch
-  - runCommands
-  - search
-description: >
-  Drive a cookbook through all three quality gates (structural compliance, critique,
-  technical verification) in a loop until all gates pass, then commit.
+name: polish-cookbook
+description: Drive a cookbook through all three quality gates (structural compliance, critique, technical verification) in a loop until all gates pass, then commit. Use when the user wants a single command that fully polishes a cookbook end-to-end.
+argument-hint: <file-path>
+user-invocable: true
+disable-model-invocation: false
 ---
 
-# Skill: polish-cookbook
+# polish-cookbook
 
 Orchestrate a multi-pass quality loop on a cookbook. Iterate until structural compliance,
 critique, and technical verification all return zero CHANGE findings, then commit.
@@ -52,9 +47,7 @@ Check the file against all seven rules. Apply each fix before proceeding to Step
 
 ### Step 2 — Critical Critique
 
-Apply the `critique-cookbook` review inline against the current state of the file.
-
-Evaluate all eight categories:
+Evaluate all eight categories inline:
 
 1. **Completeness** — gaps a reader needs to execute a step
 2. **Assumptions** — unstated context not reasonable for this audience
@@ -71,8 +64,6 @@ For each finding, tag it **CHANGE** or **NO CHANGE**. Collect all CHANGE finding
 
 ### Step 3 — Technical Verification
 
-Apply the `verify-cookbook` checks inline against the current state of the file.
-
 For each section, fetch the vendor documentation URLs from its See Also block.
 Compare every factual claim against what those URLs actually state.
 
@@ -82,9 +73,6 @@ Flag (as **CHANGE** or **NO CHANGE**):
 - Code examples using APIs, parameters, or syntax not present in vendor documentation
 - See Also URLs that are broken, redirect to unrelated content, or no longer cover the topic
 - Best For / Avoid When cells whose underlying factual premise contradicts vendor documentation
-
-If fetching all See Also URLs in one pass is impractical for a long document, work through
-the sections sequentially and state which sections were verified in each pass.
 
 ---
 
@@ -132,13 +120,12 @@ Output a concise report:
 ## Exit Condition
 
 Stop iterating when **Steps 2 and 3 both return 0 CHANGE findings** and all seven structural
-checks pass. The file is considered polished.
+checks pass.
 
 If 3 iterations complete without reaching the exit condition, stop and report:
 - Which checks are still failing
-- Why they could not be resolved automatically (e.g., requires vendor clarification, ambiguous
-  scope, missing upstream information)
-- Recommended manual actions before re-running this skill
+- Why they could not be resolved automatically
+- Recommended manual actions before re-running `/polish-cookbook`
 
 ---
 
@@ -163,5 +150,5 @@ When the exit condition is met:
    git commit -m "docs: polish {topic} cookbook — {N} iteration(s), {X} findings resolved"
    ```
 
-3. Remind the user that `verify-cookbook` can be re-run independently at any time if upstream
+3. Remind the user that `/verify-cookbook` can be re-run independently at any time if upstream
    vendor documentation changes.

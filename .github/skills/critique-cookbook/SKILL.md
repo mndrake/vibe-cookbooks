@@ -1,12 +1,12 @@
 ---
-mode: agent
-tools:
-  - codebase
-  - search
-description: Critically review a cookbook for completeness, tone, assumptions, and conciseness.
+name: critique-cookbook
+description: Critically review a cookbook for completeness, tone, assumptions, and conciseness. Use when the user wants a rigorous quality review beyond structural compliance — identifying gaps, ambiguities, advocacy language, and content that adds no value for the target audience.
+argument-hint: <file-path>
+user-invocable: true
+disable-model-invocation: false
 ---
 
-# Skill: critique-cookbook
+# critique-cookbook
 
 Critically review a vibe-cookbooks cookbook. Your job is to find gaps, ambiguities, and failures —
 not to validate what's there.

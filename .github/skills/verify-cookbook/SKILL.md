@@ -1,13 +1,12 @@
 ---
-mode: agent
-tools:
-  - codebase
-  - fetch
-  - search
-description: Validate every technical claim in a cookbook against vendor documentation.
+name: verify-cookbook
+description: Validate every technical claim in a cookbook against vendor documentation. Use when the user wants to fact-check a cookbook's accuracy, check for deprecated APIs, or confirm that Best For/Avoid When cells are supported by vendor documentation.
+argument-hint: <file-path> [companion-file-path]
+user-invocable: true
+disable-model-invocation: false
 ---
 
-# Skill: verify-cookbook
+# verify-cookbook
 
 Validate the technical accuracy of a vibe-cookbooks cookbook against the vendor documentation
 linked within it.

@@ -1,15 +1,12 @@
 ---
-mode: agent
-tools:
-  - codebase
-  - editFiles
-  - fetch
-  - runCommands
-  - search
-description: Scaffold a new Databricks cookbook from the project template.
+name: new-cookbook
+description: Scaffold a new Databricks architecture cookbook from the project template. Use when the user wants to create a new cookbook for a topic that does not yet exist.
+argument-hint: <topic> [domain-folder]
+user-invocable: true
+disable-model-invocation: false
 ---
 
-# Skill: new-cookbook
+# new-cookbook
 
 Scaffold a new `*_cookbook.md` for the vibe-cookbooks project.
 
@@ -47,11 +44,10 @@ Scaffold a new `*_cookbook.md` for the vibe-cookbooks project.
    - Fill in Problem statements with real scenarios
    - Replace stub code blocks with working Python and SQL examples
    - Complete the Design Decisions table
-   - Run the `polish-cookbook` skill once content is ready — it runs all three quality
-     gates (structural compliance, critique, technical verification) in a loop and commits
-     when all pass
-   - Alternatively, run gates individually: `review-cookbook` (structure),
-     `critique-cookbook` (completeness and tone), `verify-cookbook` (accuracy)
+   - Run `/polish-cookbook` once content is ready — it runs all three quality gates
+     (structural compliance, critique, technical verification) in a loop and commits when all pass
+   - Alternatively run gates individually: `/review-cookbook` (structure),
+     `/critique-cookbook` (completeness and tone), `/verify-cookbook` (accuracy)
 
 6. Stage and commit:
    ```
