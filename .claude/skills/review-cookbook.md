@@ -22,7 +22,7 @@ in `CLAUDE.md`.
 | 1 | **Top-level section names are domain types** | Every H2 section (except Introduction, Method Selection, Dev Pre-Requisites, Infrastructure Pre-Requisites, Managing Your Environment) names a domain type (e.g., "File Ingestion", "Streaming Ingestion"), NOT a method name (e.g., "Auto Loader", "Kafka") |
 | 2 | **Method subsections are H3 under a domain type H2** | Each method (Auto Loader, COPY INTO, JDBC, etc.) appears as `### Method Name` under its parent domain type `## Section` |
 | 3 | **Python and SQL examples in every method section** | Every method H3 section contains both a `#### Python` and a `#### SQL` subsection with a fenced code block |
-| 4 | **File location and naming** | File is under `data_architecture/{domain}/` and named `{topic}_cookbook.md` or `{topic}_combined.md` |
+| 4 | **File location and naming** | File is under `data_architecture/{domain}/` and named `{topic}_cookbook.md` |
 | 5 | **Design Decisions section present** | A `## Design Decisions` or `### Decision Criteria` section exists and contains at least one table |
 | 6 | **See Also present per method** | Every method H3 section contains a `#### See Also` subsection with at least one link |
 | 7 | **No hardcoded credentials** | No literal connection strings, passwords, or access keys in code blocks (only `dbutils.secrets.get(...)` or environment variable references) |

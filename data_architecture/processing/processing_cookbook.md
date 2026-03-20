@@ -240,7 +240,7 @@ WHEN MATCHED THEN
 - [Databricks MERGE INTO documentation](https://docs.databricks.com/en/sql/language-manual/delta-merge-into.html)
 - [Delta Lake upsert tutorial](https://docs.databricks.com/en/delta/merge.html)
 - [DeltaTable Python API — Delta Lake](https://docs.delta.io/latest/api/python/api/delta.tables.DeltaTable.html)
-- [Processing Architectural Patterns (Native) — Medallion layer responsibilities](./processing_combined.md)
+- [Processing Architectural Patterns (Native) — Medallion layer responsibilities](./processing_cookbook.md)
 
 ---
 
@@ -599,7 +599,7 @@ WHEN NOT MATCHED THEN
 
 - [Databricks SCD documentation](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
 - [Table deletes, updates, and merges — Delta Lake](https://docs.delta.io/latest/delta-update.html)
-- [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_combined.md)
+- [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_cookbook.md)
 - [SCD Type 2 method — next section in this cookbook](#slowly-changing-dimensions--scd-type-2-native-delta-merge)
 
 ---
@@ -755,7 +755,7 @@ WHERE effective_from <= '2024-06-01'
 - [Databricks SCD Type 2 with Delta Lake](https://learn.microsoft.com/en-us/azure/databricks/delta/merge)
 - [Table deletes, updates, and merges — Delta Lake](https://docs.delta.io/latest/delta-update.html)
 - [SCD Type 2 via SDP APPLY CHANGES INTO — next method](#slowly-changing-dimensions--scd-type-2-via-sdp-apply-changes-into)
-- [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_combined.md)
+- [Processing Architectural Patterns (Native) — SCD vs. Satellite design](./processing_cookbook.md)
 
 ---
 
@@ -1309,7 +1309,7 @@ SELECT date_day FROM date_spine ORDER BY date_day;
 
 > **Architecture diagram:** [Lakeflow Spark Declarative Pipelines overview — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/) includes a pipeline DAG diagram showing table dependencies, data quality expectation enforcement points, and the Bronze → Silver → Gold lineage graph. [Pipeline monitoring — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/observability) shows the event log and observability dashboard.
 
-Lakeflow Spark Declarative Pipelines (SDP) is Databricks' declarative pipeline framework. SDP manages compute provisioning, checkpointing, retry logic, and data quality enforcement automatically. The full architectural context — when to choose SDP over a Databricks Jobs pipeline, pipeline modes, and cost trade-offs — is in `processing_combined.md`.
+Lakeflow Spark Declarative Pipelines (SDP) is Databricks' declarative pipeline framework. SDP manages compute provisioning, checkpointing, retry logic, and data quality enforcement automatically. The full architectural context — when to choose SDP over a Databricks Jobs pipeline, pipeline modes, and cost trade-offs — is in `processing_cookbook.md`.
 
 ### Problem
 
@@ -1417,7 +1417,7 @@ FROM STREAM(LIVE.orders_bronze);
 - [SDP expectations — Azure Databricks](https://learn.microsoft.com/en-us/azure/databricks/delta-live-tables/expectations)
 - [SDP APPLY CHANGES INTO — Azure Databricks](https://docs.databricks.com/en/delta-live-tables/cdc.html)
 - [Slowly Changing Dimensions — SCD Type 2 via SDP APPLY CHANGES INTO](#slowly-changing-dimensions--scd-type-2-via-sdp-apply-changes-into)
-- `processing_combined.md` — when to choose SDP vs. Databricks Jobs
+- `processing_cookbook.md` — when to choose SDP vs. Databricks Jobs
 
 ---
 

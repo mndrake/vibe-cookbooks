@@ -18,7 +18,7 @@ This project provides practical, step-by-step data architecture cookbooks for Da
     - References to official docs or sample notebooks
 - **File Organization:**
   - Organize cookbooks by topic under the `data_architecture/` folder (e.g., `data_architecture/ingestion/`)
-  - Use descriptive filenames that reference the topic (e.g., `ingestion_combined.md`)
+  - Use descriptive filenames that reference the topic (e.g., `ingestion_cookbook.md`)
 - **Template Usage:**
   - Follow the provided cookbook template for new entries
   - Ensure each new cookbook is actionable and self-contained
@@ -49,9 +49,9 @@ When given a critical or accuracy review task (e.g., fact-checking, validating t
 
 ## Combined Guide Documents
 
-All guides in this project are `*_combined.md` files — self-contained documents that include both method selection guidance (decision tables) and implementation steps. There are no separate `*_patterns.md` or `*_cookbook.md` files.
+All guides in this project are `*_cookbook.md` files — self-contained documents that include both method selection guidance (decision tables) and implementation steps.
 
-New guides are created directly as `{topic}_combined.md` using `data_architecture/cookbook_template.md` as the base. See the `/new-cookbook` skill for a guided scaffolding workflow.
+New guides are created directly as `{topic}_cookbook.md` using `data_architecture/cookbook_template.md` as the base. See the `/new-cookbook` skill for a guided scaffolding workflow.
 
 ### Structure
 
@@ -83,6 +83,6 @@ Prefer a table over prose. If a decision can be described in prose only, convert
 
 ### Filename and Location
 
-Use the naming convention `{topic}_combined.md` in `data_architecture/{domain}/` (e.g., `data_architecture/ingestion/ingestion_combined.md`).
+Use the naming convention `{topic}_cookbook.md` in `data_architecture/{domain}/` (e.g., `data_architecture/ingestion/ingestion_cookbook.md`).
 
 
